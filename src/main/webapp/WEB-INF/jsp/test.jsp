@@ -277,6 +277,28 @@
                 </div>
 
                 <div class="card">
+                    <h2>FFmpeg：循环/截断音频以匹配视频时长</h2>
+                    <p style="color:#8b949e;font-size:0.85rem;margin-bottom:1rem;">
+                        上传一个 MP4 视频和一段音频，后台会自动重复播放或在末尾截断音频，使音频总时长与视频时长一致，
+                        然后将该音频作为唯一音轨插入视频（不会对音频进行变速处理）。
+                    </p>
+                    <form id="loopForm">
+                        <label>视频文件（MP4，必选）</label>
+                        <input type="file" name="video" id="loopVideoFile" accept="video/mp4,video/*" required />
+
+                        <label>背景音频文件（MP3 / 音频，必选）</label>
+                        <input type="file" name="audio" id="loopAudioFile" accept="audio/mpeg,audio/*" required />
+
+                        <button type="submit" class="btn" id="loopSubmitBtn">开始生成匹配时长的视频</button>
+                    </form>
+                    <div id="loopMsg" class="msg" style="display:none;"></div>
+                    <div style="margin-top:0.75rem;">
+                        <label style="margin-bottom:0.35rem;">合成后视频预览</label>
+                        <video id="loopResultVideo" controls style="width:100%;max-height:320px;background:#000;display:none;"></video>
+                    </div>
+                </div>
+
+                <div class="card">
                     <h2>知乎：按问题 ID 拉取最高赞回答</h2>
                     <p style="color:#8b949e;font-size:0.85rem;margin-bottom:1rem;">
                         在浏览器中打开知乎问题页面，复制地址栏中的问题数字 ID 和当前页面的 Cookie，这里将通过后端 RestTemplate
@@ -558,6 +580,59 @@
                     })
                     .finally(function () {
                         submitBtn.disabled = false;
+                    });
+            });
+        })();
+
+        (function () {
+            var loopForm = document.getElementById('loopForm');
+            var loopSubmitBtn = document.getElementById('loopSubmitBtn');
+            var loopMsgEl = document.getElementById('loopMsg');
+            var loopResultVideo = document.getElementById('loopResultVideo');
+
+            function showLoopMsg(text, isErr) {
+                loopMsgEl.textContent = text;
+                loopMsgEl.className = 'msg ' + (isErr ? 'err' : 'ok');
+                loopMsgEl.style.display = 'block';
+            }
+
+            function hideLoopMsg() {
+                loopMsgEl.style.display = 'none';
+            }
+
+            loopForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                hideLoopMsg();
+                loopResultVideo.style.display = 'none';
+                loopResultVideo.removeAttribute('src');
+
+                var fd = new FormData(loopForm);
+                loopSubmitBtn.disabled = true;
+                showLoopMsg('正在生成匹配时长的视频，请稍候……', false);
+
+                fetch('${pageContext.request.contextPath}/api/video/loop-audio', {
+                    method: 'POST',
+                    body: fd
+                })
+                    .then(function (r) {
+                        if (!r.ok) {
+                            return r.text().then(function (txt) {
+                                throw new Error(txt || ('HTTP ' + r.status));
+                            });
+                        }
+                        return r.blob();
+                    })
+                    .then(function (blob) {
+                        var url = URL.createObjectURL(blob);
+                        loopResultVideo.src = url;
+                        loopResultVideo.style.display = 'block';
+                        showLoopMsg('视频生成成功，可在下方预览或右键另存为。', false);
+                    })
+                    .catch(function (err) {
+                        showLoopMsg('视频生成失败: ' + (err.message || err), true);
+                    })
+                    .finally(function () {
+                        loopSubmitBtn.disabled = false;
                     });
             });
         })();

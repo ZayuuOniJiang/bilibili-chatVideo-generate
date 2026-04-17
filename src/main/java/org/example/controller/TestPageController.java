@@ -1,14 +1,14 @@
 package org.example.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.pojo.Result;
 import org.example.service.QwenTtsService;
+import org.example.service.ZhihuService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -45,6 +45,7 @@ public class TestPageController {
 
 
     private final QwenTtsService qwenTtsService;
+    private final ZhihuService zhihuService;
 
     /**
      * 打包在 resources/ffmpeg 目录下的 ffmpeg / ffprobe 可执行文件。
@@ -70,13 +71,6 @@ public class TestPageController {
 
     /** 风格/类型选项：展示名 -> 请求体中 instructions 的文案 */
     public static final Map<String, String> TTS_STYLE_OPTIONS = new LinkedHashMap<>();
-
-    private static final String ZHIHU_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    + "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
-
-    private RestTemplate restTemplate = new RestTemplate();
-    private ObjectMapper objectMapper = new ObjectMapper();
 
     static {
         TTS_STYLE_OPTIONS.put("", "不指定风格");
@@ -138,100 +132,19 @@ public class TestPageController {
             @RequestParam("questionId") String questionId,
             @RequestParam("cookie") String cookie
     ) {
-        if (questionId == null || questionId.trim().isEmpty()) {
-            return Result.fail(400, "请输入知乎问题 ID（数字部分）");
+        Result<Map<String, String>> serviceResult = zhihuService.fetchTopAnswer(
+                questionId, cookie, PAGE_SIZE, PAGE_COUNT
+        );
+        if (serviceResult == null || serviceResult.getCode() != 200) {
+            int code = serviceResult == null ? 500 : serviceResult.getCode();
+            String msg = serviceResult == null ? "调用知乎接口失败" : serviceResult.getMessage();
+            return Result.fail(code, msg);
         }
-        if (cookie == null || cookie.trim().isEmpty()) {
-            return Result.fail(400, "请粘贴你在知乎网页中复制的完整 Cookie");
-        }
-
-        try {
-            String trimmedId = questionId.trim();
-            String baseUrl = "https://www.zhihu.com/api/v4/questions/" + trimmedId + "/answers";
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.set(HttpHeaders.USER_AGENT, ZHIHU_USER_AGENT);
-            headers.set(HttpHeaders.COOKIE, cookie.trim());
-            headers.set(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
-
-            // 每页 PAGE_SIZE 条数据，最多遍历 PAGE_COUNT 页，共 PAGE_SIZE * PAGE_COUNT 条，在后端根据 voteup_count 挑出最高赞回答
-            int pageSize =PAGE_SIZE ;
-            int maxPages =PAGE_COUNT ;
-
-            JsonNode bestAnswer = null;
-            long bestVote = -1;
-
-            for (int i = 0; i < maxPages; i++) {
-                int offset = i * pageSize;
-                String url = baseUrl
-                        + "?include=content,voteup_count,question.title"
-                        + "&limit=" + pageSize
-                        + "&offset=" + offset
-                        + "&sort_by=default";
-
-                ResponseEntity<String> response = restTemplate.exchange(
-                        url,
-                        HttpMethod.GET,
-                        new HttpEntity<>(headers),
-                        String.class
-                );
-
-                if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-                    // 若第一页就失败，直接返回错误；若中途失败，则停止继续遍历，使用目前已找到的最高赞
-                    if (i == 0) {
-                        return Result.fail(500, "调用知乎接口失败，HTTP " + response.getStatusCodeValue());
-                    }
-                    break;
-                }
-
-                JsonNode root = objectMapper.readTree(response.getBody());
-                JsonNode dataNode = root.path("data");
-                if (!dataNode.isArray() || dataNode.size() == 0) {
-                    // 没有更多回答了
-                    break;
-                }
-
-                for (JsonNode ans : dataNode) {
-                    long voteCount = ans.path("voteup_count").asLong(0);
-                    if (bestAnswer == null || voteCount > bestVote) {
-                        bestVote = voteCount;
-                        bestAnswer = ans;
-                    }
-                }
-
-                // 如果 paging 标记已经到结尾，则不再继续请求后续页
-                JsonNode pagingNode = root.path("paging");
-                if (pagingNode.isObject() && pagingNode.path("is_end").asBoolean(false)) {
-                    break;
-                }
-            }
-
-            if (bestAnswer == null) {
-                return Result.fail(500, "未能找到最高赞回答");
-            }
-
-            String title = "";
-            JsonNode questionNode = bestAnswer.path("question");
-            if (!questionNode.isMissingNode() && !questionNode.isNull()) {
-                title = questionNode.path("title").asText("");
-            }
-            if (title == null || title.trim().isEmpty()) {
-                title = "问题 " + questionId.trim();
-            }
-
-            String content = bestAnswer.path("content").asText("");
-            if (content == null || content.trim().isEmpty()) {
-                return Result.fail(500, "最高赞回答内容为空");
-            }
-
-            Map<String, String> result = new LinkedHashMap<>();
-            result.put("title", title.trim());
-            result.put("answerContent", content);
-            return Result.ok(result);
-        } catch (Exception e) {
-            log.warn("调用知乎回答接口失败, questionId={}", questionId, e);
-            return Result.fail(500, "调用知乎接口失败：" + e.getMessage());
-        }
+        Map<String, String> data = serviceResult.getData();
+        Map<String, String> resp = new LinkedHashMap<>();
+        resp.put("title", data.getOrDefault("title", ""));
+        resp.put("answerContent", data.getOrDefault("answerContent", ""));
+        return Result.ok(resp);
     }
 
     /**
@@ -374,6 +287,107 @@ public class TestPageController {
                 //noinspection ResultOfMethodCallIgnored
                 outputFile.delete();
             }
+        }
+    }
+
+    /**
+     * 上传视频 + 一段背景音频，将音频循环/截断以匹配视频总时长，返回合成后的视频文件流。
+     *
+     * - 不拉伸音频（不加速/减速），仅重复或截断。
+     * - 使用 ffmpeg 的 stream_loop 和 shortest，让音频自动循环并在视频结束处截断。
+     */
+    @PostMapping(value = "/api/video/loop-audio")
+    public ResponseEntity<Resource> loopAudioToVideo(
+            @RequestParam("video") MultipartFile video,
+            @RequestParam("audio") MultipartFile audio
+    ) {
+        try {
+            initFfmpegIfNecessary();
+        } catch (IOException e) {
+            log.warn("初始化 ffmpeg/ffprobe 可执行文件失败", e);
+            return ResponseEntity.status(500)
+                    .body(new ByteArrayResource(("初始化 ffmpeg 失败: " + e.getMessage()).getBytes()));
+        }
+
+        if (video == null || video.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(new ByteArrayResource("请上传视频文件".getBytes()));
+        }
+        if (audio == null || audio.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(new ByteArrayResource("请上传要匹配时长的音频文件".getBytes()));
+        }
+
+        File videoFile = null;
+        File audioFile = null;
+        File outputFile = null;
+        try {
+            videoFile = File.createTempFile("loop_video_", ".mp4");
+            audioFile = File.createTempFile("loop_audio_", ".mp3");
+            outputFile = File.createTempFile("loop_output_", ".mp4");
+
+            video.transferTo(videoFile);
+            audio.transferTo(audioFile);
+
+            // ffmpeg -stream_loop -1 -i audio -i video -map 1:v -map 0:a -c:v copy -shortest out.mp4
+            ProcessBuilder pb = new ProcessBuilder(
+                    ffmpegPath,
+                    "-y",
+                    "-stream_loop", "-1",
+                    "-i", audioFile.getAbsolutePath(),
+                    "-i", videoFile.getAbsolutePath(),
+                    "-map", "1:v",
+                    "-map", "0:a",
+                    "-c:v", "copy",
+                    "-shortest",
+                    outputFile.getAbsolutePath()
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            try (InputStream is = process.getInputStream();
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[1024];
+                int len;
+                while ((len = is.read(buf)) != -1) {
+                    baos.write(buf, 0, len);
+                }
+                String ffmpegLog = new String(baos.toByteArray());
+                int exit = process.waitFor();
+                if (exit != 0) {
+                    log.warn("ffmpeg 循环匹配音频失败，exitCode={}, log={}", exit, ffmpegLog);
+                    return ResponseEntity.status(500)
+                            .body(new ByteArrayResource(("FFmpeg 处理失败，具体日志如下：\n" + ffmpegLog).getBytes()));
+                } else {
+                    log.info("ffmpeg 循环匹配音频成功，log={}", ffmpegLog);
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return ResponseEntity.status(500)
+                        .body(new ByteArrayResource("FFmpeg 执行被中断".getBytes()));
+            }
+
+            FileSystemResource resource = new FileSystemResource(outputFile);
+            return ResponseEntity.ok()
+                    .contentLength(outputFile.length())
+                    .contentType(MediaType.valueOf("video/mp4"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"looped.mp4\"")
+                    .body(resource);
+        } catch (IOException e) {
+            log.warn("视频与音频循环匹配合成异常", e);
+            return ResponseEntity.status(500)
+                    .body(new ByteArrayResource(("视频与音频循环匹配合成异常: " + e.getMessage()).getBytes()));
+        } finally {
+            if (videoFile != null && videoFile.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                videoFile.delete();
+            }
+            if (audioFile != null && audioFile.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                audioFile.delete();
+            }
+            // outputFile 不在这里删除，以避免流式响应过程中找不到文件；
+            // 可由外部定期清理临时目录。
         }
     }
 

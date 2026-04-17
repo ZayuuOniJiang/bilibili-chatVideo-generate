@@ -1,6 +1,7 @@
 package org.example.service;
 
 import org.example.pojo.Result;
+import org.example.pojo.SubtitleStyleConfig;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -48,7 +49,21 @@ public interface BashboardService {
             MultipartFile video,
             MultipartFile audioRoleA,
             MultipartFile audioRoleB,
-            String instruction
+            MultipartFile bgm,
+            String bgmVolume,
+            String instruction,
+            SubtitleStyleConfig subtitleStyle,
+            boolean exportPortrait,
+            MultipartFile[] roleAImages,
+            MultipartFile[] roleBImages,
+            String roleAImagePosXPercent,
+            String roleAImagePosYPercent,
+            String roleAImageSizePercent,
+            String roleAImageFlip,
+            String roleBImagePosXPercent,
+            String roleBImagePosYPercent,
+            String roleBImageSizePercent,
+            String roleBImageFlip
     );
 }
 

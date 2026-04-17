@@ -32,6 +32,11 @@
             flex-direction: column;
             gap: 1.5rem;
             backdrop-filter: blur(14px);
+            position: sticky;
+            top: 0;
+            align-self: flex-start;
+            height: 100vh; /* 整个竖屏都保持导航栏风格 */
+            overflow-y: auto;
         }
         .sidebar-header {
             display: flex;
@@ -111,7 +116,7 @@
         }
         .main-content {
             flex: 1;
-            max-width: 1040px;
+            max-width: 1200px;
         }
         .wrap {
             max-width: 100%;
@@ -237,7 +242,9 @@
         </div>
         <div class="main-content">
 <div class="wrap">
-    <div class="card">
+    <div class="row">
+        <div class="col" style="flex:7 1 0;">
+            <div class="card">
         <h2>步骤一：填写四个自定义可选框</h2>
         <form id="pipelineForm" enctype="multipart/form-data">
             <div class="row">
@@ -263,6 +270,19 @@
             </div>
 
             <div style="margin-top:0.75rem;">
+                <label>背景音乐音频（可选，将循环/截断以匹配视频总时长）</label>
+                <input type="file" name="bgm" id="bgmFile" accept="audio/mpeg,audio/*" />
+                <div style="margin-top:0.35rem;">
+                    <label>背景音乐音量（0.0 - 1.0，1.0 为原始音量）</label>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <input type="range" id="bgmVolume" min="0" max="1" step="0.05" value="0.6" style="flex:1;" />
+                        <span id="bgmVolumeText" style="font-size:0.85rem;color:#e5e7eb;">0.60</span>
+                    </div>
+                    <audio id="bgmPreview" controls style="display:none;width:100%;margin-top:0.35rem;"></audio>
+                </div>
+            </div>
+
+            <div style="margin-top:0.75rem;">
                 <label>指令控制（可选，自然语言描述整体语速、情感、音色等，将作为 instructions 传给 TTS 模型）</label>
                 <input type="text" name="instruction" id="instructionInput"
                        placeholder="例如：语速较快，语气活泼，适合短视频解说" />
@@ -271,13 +291,20 @@
                 <audio id="previewAudio" controls style="display:none;width:100%;margin-top:0.5rem;"></audio>
             </div>
 
-            <div style="margin-top:0.75rem;">
+            <div style="margin-top:0.75rem;margin-bottom:1.25rem;">
                 <label>3. 知乎标题</label>
                 <input type="text" name="title" id="titleInput" placeholder="请输入摘抄自知乎的问题标题，例如：有没有人科普一下..." />
             </div>
             <div>
                 <label>4. 知乎高赞文本回答</label>
                 <textarea name="content" id="contentInput" placeholder="请输入对应的高赞回答全文"></textarea>
+            </div>
+
+            <div style="margin-top:0.75rem;">
+                <label>
+                    <input type="checkbox" id="exportPortrait" />
+                    导出竖屏视频（最终分辨率 1080 × 1920，9:16）
+                </label>
             </div>
 
             <button type="button" class="btn" id="generateTemplateBtn">步骤一：生成角色对话模板</button>
@@ -291,17 +318,114 @@
             <button type="button" class="btn" id="confirmGenerateBtn" style="margin-top:0.75rem;">步骤三-五：确认模板并生成视频</button>
             <div id="confirmMsg" class="msg"></div>
         </form>
+            </div>
+        </div>
+        <div class="col" style="flex:3 1 0;">
+            <div class="card">
+                <h2>知乎问答总览</h2>
+                <p class="sub">从本地持久化文件中读取已抓取的问题与最高赞回答，点击问题可展开/收起详情。</p>
+                <button type="button" class="btn" id="loadQaOverviewBtn">加载总览</button>
+                <div id="qaOverviewMsg" class="msg"></div>
+                <div id="qaOverviewList" style="margin-top:0.75rem;max-height:360px;overflow:auto;"></div>
+            </div>
+
+            <div class="card">
+                <h2>知乎热榜抓取（questionId + 最高赞回答）</h2>
+                <p class="sub">输入你在知乎网页中复制的 Cookie，后台会调用知乎热榜接口 <code>topstory/hot-list</code> 拉取前 10 个问题，并为每个问题抓取当前最高赞回答，同时写入本地 <code>resources/QA.txt</code>。</p>
+                <label>知乎 Cookie（必填）</label>
+                <textarea id="zhihuHotCookie" placeholder="请粘贴你在知乎网页中复制的完整 Cookie" style="width:100%;min-height:80px;"></textarea>
+                <button type="button" class="btn" id="fetchHotQaBtn" style="margin-top:0.5rem;">抓取知乎热榜前 10 条问答</button>
+                <div id="hotQaMsg" class="msg"></div>
+                <div id="hotQaList" style="margin-top:0.75rem;max-height:360px;overflow:auto;"></div>
+            </div>
+        </div>
     </div>
 
-    <div class="card">
+    <div style="margin-top:1.5rem;clear:both;">
+        <div class="row">
+            <div class="col">
+                <div class="card">
+                    <h2>示意字幕内容 · 最终效果预览区域</h2>
+                    <p class="sub">这里用前端模拟字幕在视频中的大致效果，方便你在生成视频前先观察字号、位置与换行。</p>
+                    <label>示例字幕文本</label>
+                    <textarea id="subtitleSampleText">角色A：今天天气真不错。
+角色B：是啊，要不出去走走？</textarea>
+                    <div style="margin-top:0.75rem;">
+                        <label>预览区域</label>
+                        <div id="subtitlePreviewContainer" style="position:relative;width:100%;max-width:640px;height:200px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid rgba(148,163,184,0.4);">
+                            <img id="roleAImgPreview" style="position:absolute;display:none;transform-origin:bottom left;" />
+                            <img id="roleBImgPreview" style="position:absolute;display:none;transform-origin:bottom left;" />
+                            <div id="subtitlePreview"
+                                 style="position:absolute;left:5%;right:5%;bottom:20px;color:#000000;font-size:32px;font-family:'Microsoft YaHei',sans-serif;text-align:center;text-shadow:0 0 2px #000,0 0 4px #000;white-space:pre-wrap;line-height:1.4;">
+                                角色A：今天天气真不错。
+角色B：是啊，要不出去走走？
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card">
+                    <h2>字幕参数在线修改区域</h2>
+                    <p class="sub">这里的参数会在你点击“确认模板并生成视频”时一并提交到后端，用于生成 ASS 字幕样式和角色立绘叠加。</p>
+                    <label>角色A 立绘图片（可多选，多张图片将按台词轮流切换）</label>
+                    <input type="file" id="roleAImages" name="roleAImages" accept="image/*" multiple />
+                    <label>角色B 立绘图片（可多选，多张图片将按台词轮流切换）</label>
+                    <input type="file" id="roleBImages" name="roleBImages" accept="image/*" multiple />
+                    <label>角色A 显示名称（用于字幕前缀，例如“熊二”）</label>
+                    <input type="text" id="roleALabel" value="角色A" />
+                    <label>角色B 显示名称（用于字幕前缀，例如“熊大”，仅双人模式有效）</label>
+                    <input type="text" id="roleBLabel" value="角色B" />
+                    <label>角色A 立绘位置 X（相对屏幕宽度百分比，0-100）</label>
+                    <input type="number" id="roleAImagePosXPercent" value="10" min="0" max="100" />
+                    <label>角色A 立绘位置 Y（相对屏幕高度百分比，0-100）</label>
+                    <input type="number" id="roleAImagePosYPercent" value="60" min="0" max="100" />
+                    <label>角色A 立绘大小（相对屏幕宽度百分比，0-100）</label>
+                    <input type="number" id="roleAImageSizePercent" value="30" min="5" max="100" />
+                    <label><input type="checkbox" id="roleAImageFlip" /> 角色A 水平镜像翻转</label>
+                    <label>角色B 立绘位置 X（相对屏幕宽度百分比，0-100）</label>
+                    <input type="number" id="roleBImagePosXPercent" value="60" min="0" max="100" />
+                    <label>角色B 立绘位置 Y（相对屏幕高度百分比，0-100）</label>
+                    <input type="number" id="roleBImagePosYPercent" value="60" min="0" max="100" />
+                    <label>角色B 立绘大小（相对屏幕宽度百分比，0-100）</label>
+                    <input type="number" id="roleBImageSizePercent" value="30" min="5" max="100" />
+                    <label><input type="checkbox" id="roleBImageFlip" /> 角色B 水平镜像翻转</label>
+                    <label>预览分辨率</label>
+                    <select id="subtitleResolutionPreset">
+                        <option value="video" selected>跟随上传视频</option>
+                        <option value="1920x1080">1920 × 1080（16:9）</option>
+                        <option value="1280x720">1280 × 720（16:9）</option>
+                        <option value="2560x1440">2560 × 1440（16:9）</option>
+                        <option value="1080x1920">1080 × 1920（9:16 竖屏）</option>
+                    </select>
+                    <label>每行最多字数</label>
+                    <input type="number" id="subtitleWrapLength" value="12" min="5" max="40" />
+                    <label>字体名称</label>
+                    <input type="text" id="subtitleFontName" value="Microsoft YaHei" />
+                    <label>字号（px）</label>
+                    <input type="text" id="subtitleFontSize" value="85" />
+                    <label>文字颜色（#RRGGBB）</label>
+                    <input type="text" id="subtitlePrimaryColor" value="#00FFFF" />
+                    <label>描边颜色（#RRGGBB）</label>
+                    <input type="text" id="subtitleOutlineColor" value="#000000" />
+                    <label>描边粗细（整数）</label>
+                    <input type="text" id="subtitleOutline" value="2" />
+                    <label>阴影大小（整数）</label>
+                    <input type="text" id="subtitleShadow" value="1" />
+                    <label>垂直偏移百分比（距底部高度，0-100）</label>
+                    <input type="number" id="subtitleVerticalOffsetPercent" value="60" min="0" max="100" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
         <h2>结果预览</h2>
         <p class="sub">生成成功后，会在下方展示合成后的视频（服务器返回的是本地文件路径，通过单独接口进行读取 / 下载）。</p>
         <div class="video-preview">
             <video id="resultVideo" controls></video>
         </div>
     </div>
-</div>
-        </div>
     </main>
 </div>
 
@@ -383,10 +507,33 @@
         var videoFile = document.getElementById('videoFile');
         var audioRoleA = document.getElementById('audioRoleA');
         var audioRoleB = document.getElementById('audioRoleB');
+        var bgmFile = document.getElementById('bgmFile');
         var titleInput = document.getElementById('titleInput');
         var templateBox = document.getElementById('templateBox');
         var resultVideo = document.getElementById('resultVideo');
         var instructionInput = document.getElementById('instructionInput');
+        var subtitleFontName = document.getElementById('subtitleFontName');
+        var subtitleFontSize = document.getElementById('subtitleFontSize');
+        var subtitlePrimaryColor = document.getElementById('subtitlePrimaryColor');
+        var subtitleOutlineColor = document.getElementById('subtitleOutlineColor');
+        var subtitleOutline = document.getElementById('subtitleOutline');
+        var subtitleShadow = document.getElementById('subtitleShadow');
+        var subtitleWrapLength = document.getElementById('subtitleWrapLength');
+        var subtitleVerticalOffsetPercent = document.getElementById('subtitleVerticalOffsetPercent');
+        var exportPortraitEl = document.getElementById('exportPortrait');
+        var bgmVolumeEl = document.getElementById('bgmVolume');
+        var roleALabelEl = document.getElementById('roleALabel');
+        var roleBLabelEl = document.getElementById('roleBLabel');
+        var roleAImagesInput = document.getElementById('roleAImages');
+        var roleBImagesInput = document.getElementById('roleBImages');
+        var roleAImagePosXEl = document.getElementById('roleAImagePosXPercent');
+        var roleAImagePosYEl = document.getElementById('roleAImagePosYPercent');
+        var roleAImageSizeEl = document.getElementById('roleAImageSizePercent');
+        var roleAImageFlipEl = document.getElementById('roleAImageFlip');
+        var roleBImagePosXEl = document.getElementById('roleBImagePosXPercent');
+        var roleBImagePosYEl = document.getElementById('roleBImagePosYPercent');
+        var roleBImageSizeEl = document.getElementById('roleBImageSizePercent');
+        var roleBImageFlipEl = document.getElementById('roleBImageFlip');
 
         function showMsg(el, text, isErr) {
             el.textContent = text;
@@ -436,8 +583,81 @@
             if (mode === 'double' && audioRoleB.files && audioRoleB.files[0]) {
                 fd.append('audioRoleB', audioRoleB.files[0]);
             }
+            if (bgmFile && bgmFile.files && bgmFile.files[0]) {
+                fd.append('bgm', bgmFile.files[0]);
+            }
             if (instruction) {
                 fd.append('instruction', instruction);
+            }
+            if (subtitleWrapLength) {
+                fd.append('subtitleWrapLength', (subtitleWrapLength.value || '').trim());
+            }
+            if (subtitleFontName) {
+                fd.append('subtitleFontName', (subtitleFontName.value || '').trim());
+            }
+            if (subtitleFontSize) {
+                fd.append('subtitleFontSize', (subtitleFontSize.value || '').trim());
+            }
+            if (subtitlePrimaryColor) {
+                fd.append('subtitlePrimaryColor', (subtitlePrimaryColor.value || '').trim());
+            }
+            if (subtitleOutlineColor) {
+                fd.append('subtitleOutlineColor', (subtitleOutlineColor.value || '').trim());
+            }
+            if (subtitleOutline) {
+                fd.append('subtitleOutline', (subtitleOutline.value || '').trim());
+            }
+            if (subtitleShadow) {
+                fd.append('subtitleShadow', (subtitleShadow.value || '').trim());
+            }
+            if (subtitleVerticalOffsetPercent) {
+                fd.append('subtitleVerticalOffsetPercent', (subtitleVerticalOffsetPercent.value || '').trim());
+            }
+            if (bgmVolumeEl) {
+                fd.append('bgmVolume', (bgmVolumeEl.value || '').trim());
+            }
+            if (roleALabelEl) {
+                fd.append('roleALabel', (roleALabelEl.value || '').trim());
+            }
+            if (roleBLabelEl) {
+                fd.append('roleBLabel', (roleBLabelEl.value || '').trim());
+            }
+            if (roleAImagesInput && roleAImagesInput.files && roleAImagesInput.files.length > 0) {
+                for (var i = 0; i < roleAImagesInput.files.length; i++) {
+                    fd.append('roleAImages', roleAImagesInput.files[i]);
+                }
+            }
+            if (roleBImagesInput && roleBImagesInput.files && roleBImagesInput.files.length > 0) {
+                for (var j = 0; j < roleBImagesInput.files.length; j++) {
+                    fd.append('roleBImages', roleBImagesInput.files[j]);
+                }
+            }
+            if (roleAImagePosXEl) {
+                fd.append('roleAImagePosXPercent', (roleAImagePosXEl.value || '').trim());
+            }
+            if (roleAImagePosYEl) {
+                fd.append('roleAImagePosYPercent', (roleAImagePosYEl.value || '').trim());
+            }
+            if (roleAImageSizeEl) {
+                fd.append('roleAImageSizePercent', (roleAImageSizeEl.value || '').trim());
+            }
+            if (roleAImageFlipEl) {
+                fd.append('roleAImageFlip', roleAImageFlipEl.checked ? 'true' : 'false');
+            }
+            if (roleBImagePosXEl) {
+                fd.append('roleBImagePosXPercent', (roleBImagePosXEl.value || '').trim());
+            }
+            if (roleBImagePosYEl) {
+                fd.append('roleBImagePosYPercent', (roleBImagePosYEl.value || '').trim());
+            }
+            if (roleBImageSizeEl) {
+                fd.append('roleBImageSizePercent', (roleBImageSizeEl.value || '').trim());
+            }
+            if (roleBImageFlipEl) {
+                fd.append('roleBImageFlip', roleBImageFlipEl.checked ? 'true' : 'false');
+            }
+            if (exportPortraitEl && exportPortraitEl.checked) {
+                fd.append('exportPortrait', 'true');
             }
 
             confirmBtn.disabled = true;
@@ -521,6 +741,529 @@
                     })
                     .finally(function () {
                         previewBtn.disabled = false;
+                    });
+            });
+        }
+    })();
+
+    // 字幕样式预览：纯前端模拟，与视频生成解耦
+    (function () {
+        var sampleTextEl = document.getElementById('subtitleSampleText');
+        var previewEl = document.getElementById('subtitlePreview');
+        var fontNameEl = document.getElementById('subtitleFontName');
+        var fontSizeEl = document.getElementById('subtitleFontSize');
+        var primaryColorEl = document.getElementById('subtitlePrimaryColor');
+        var outlineColorEl = document.getElementById('subtitleOutlineColor');
+        var outlineEl = document.getElementById('subtitleOutline');
+        var shadowEl = document.getElementById('subtitleShadow');
+        var wrapLengthEl = document.getElementById('subtitleWrapLength');
+        var resolutionPresetEl = document.getElementById('subtitleResolutionPreset');
+        var previewContainer = document.getElementById('subtitlePreviewContainer');
+        var verticalOffsetEl = document.getElementById('subtitleVerticalOffsetPercent');
+        var exportPortraitEl = document.getElementById('exportPortrait');
+        var roleAImagesInput = document.getElementById('roleAImages');
+        var roleBImagesInput = document.getElementById('roleBImages');
+        var roleAImgPreview = document.getElementById('roleAImgPreview');
+        var roleBImgPreview = document.getElementById('roleBImgPreview');
+        var roleAImagePosXEl = document.getElementById('roleAImagePosXPercent');
+        var roleAImagePosYEl = document.getElementById('roleAImagePosYPercent');
+        var roleAImageSizeEl = document.getElementById('roleAImageSizePercent');
+        var roleAImageFlipEl = document.getElementById('roleAImageFlip');
+        var roleBImagePosXEl = document.getElementById('roleBImagePosXPercent');
+        var roleBImagePosYEl = document.getElementById('roleBImagePosYPercent');
+        var roleBImageSizeEl = document.getElementById('roleBImageSizePercent');
+        var roleBImageFlipEl = document.getElementById('roleBImageFlip');
+
+        if (!previewEl) {
+            return;
+        }
+
+        function wrapByCharLimit(text, limit) {
+            if (!text) return "";
+            var lines = [];
+            var current = "";
+            var count = 0;
+            for (var i = 0; i < text.length; i++) {
+                var ch = text.charAt(i);
+                if (ch === '\n' || ch === '\r') {
+                    if (current.length > 0) {
+                        lines.push(current);
+                        current = "";
+                        count = 0;
+                    }
+                    continue;
+                }
+                current += ch;
+                count++;
+                if (count >= limit) {
+                    lines.push(current);
+                    current = "";
+                    count = 0;
+                }
+            }
+            if (current.length > 0) {
+                lines.push(current);
+            }
+            return lines.join("\n");
+        }
+
+        function applyPreview() {
+            var text = (sampleTextEl.value || '').trim();
+            if (!text) {
+                text = '这里将展示字幕预览效果';
+            }
+            var wrapLen = parseInt((wrapLengthEl.value || '15').trim(), 10);
+            if (isNaN(wrapLen) || wrapLen <= 0) {
+                wrapLen = 15;
+            }
+            var wrapped = wrapByCharLimit(text, wrapLen);
+            previewEl.textContent = wrapped;
+
+            var fontName = (fontNameEl.value || 'Microsoft YaHei').trim();
+            var fontSize = parseInt((fontSizeEl.value || '32').trim(), 10);
+            if (isNaN(fontSize) || fontSize <= 0) {
+                fontSize = 32;
+            }
+            var primaryColor = (primaryColorEl.value || '#FFFFFF').trim();
+            var outlineColor = (outlineColorEl.value || '#000000').trim();
+            var outline = parseInt((outlineEl.value || '2').trim(), 10);
+            if (isNaN(outline) || outline < 0) {
+                outline = 2;
+            }
+            var shadow = parseInt((shadowEl.value || '1').trim(), 10);
+            if (isNaN(shadow) || shadow < 0) {
+                shadow = 1;
+            }
+            previewEl.style.fontFamily = fontName + ", sans-serif";
+            // 按分辨率比例缩放预览字体大小
+            var previewWidth = previewContainer.clientWidth || 640;
+            var playResX = 1920;
+            if (resolutionPresetEl) {
+                var val = resolutionPresetEl.value;
+                if (val === 'video' && window.__subtitleVideoWidth) {
+                    playResX = window.__subtitleVideoWidth;
+                } else if (val && val.indexOf('x') > 0) {
+                    var parts = val.split('x');
+                    var pw = parseInt(parts[0], 10);
+                    if (!isNaN(pw) && pw > 0) {
+                        playResX = pw;
+                    }
+                }
+            }
+            var scale = previewWidth / playResX;
+            var previewFontSize = fontSize * scale;
+            previewEl.style.fontSize = previewFontSize + "px";
+            previewEl.style.color = primaryColor;
+
+            // 用 text-shadow 近似模拟描边 + 阴影
+            var ts = [];
+            var o = outline;
+            if (o > 0) {
+                ts.push("0 0 " + (o + 1) + "px " + outlineColor);
+                ts.push(o + "px 0 " + outlineColor);
+                ts.push("-" + o + "px 0 " + outlineColor);
+                ts.push("0 " + o + "px " + outlineColor);
+                ts.push("0 -" + o + "px " + outlineColor);
+            }
+            if (shadow > 0) {
+                ts.push(shadow + "px " + shadow + "px " + outlineColor);
+            }
+            previewEl.style.textShadow = ts.join(", ");
+
+            // 垂直偏移百分比：根据容器高度计算 bottom 像素
+            var offsetPercent = parseInt((verticalOffsetEl && verticalOffsetEl.value ? verticalOffsetEl.value : '5').trim(), 10);
+            if (isNaN(offsetPercent) || offsetPercent < 0) offsetPercent = 0;
+            if (offsetPercent > 100) offsetPercent = 100;
+            var previewHeight = previewContainer.clientHeight || 360;
+            var bottomPx = previewHeight * (offsetPercent / 100.0);
+            previewEl.style.bottom = bottomPx + "px";
+            previewEl.style.top = "";
+            previewEl.style.transform = "";
+
+            // 角色立绘预览：按百分比控制位置和大小，支持镜像
+            function applyRolePreview(imgInput, imgEl, posXEl, posYEl, sizeEl, flipEl) {
+                if (!imgEl) return;
+                if (!imgInput || !imgInput.files || imgInput.files.length === 0) {
+                    imgEl.style.display = 'none';
+                    imgEl.removeAttribute('src');
+                    return;
+                }
+                if (!imgEl.src) {
+                    var url = URL.createObjectURL(imgInput.files[0]);
+                    imgEl.src = url;
+                }
+                imgEl.style.display = 'block';
+                var x = parseFloat((posXEl && posXEl.value) ? posXEl.value : '10');
+                var y = parseFloat((posYEl && posYEl.value) ? posYEl.value : '60');
+                var size = parseFloat((sizeEl && sizeEl.value) ? sizeEl.value : '30');
+                if (isNaN(x) || x < 0) x = 0;
+                if (x > 100) x = 100;
+                if (isNaN(y) || y < 0) y = 0;
+                if (y > 100) y = 100;
+                if (isNaN(size) || size <= 0) size = 30;
+                if (size > 100) size = 100;
+                imgEl.style.left = x + "%";
+                imgEl.style.top = y + "%";
+                // 按预览容器宽度的百分比控制立绘宽度，高度自适应，保持与后端按宽度百分比缩放策略一致
+                imgEl.style.width = size + "%";
+                imgEl.style.height = "auto";
+                var flip = flipEl && flipEl.checked;
+                imgEl.style.transform = flip ? "scaleX(-1)" : "scaleX(1)";
+            }
+
+            applyRolePreview(roleAImagesInput, roleAImgPreview, roleAImagePosXEl, roleAImagePosYEl, roleAImageSizeEl, roleAImageFlipEl);
+            applyRolePreview(roleBImagesInput, roleBImgPreview, roleBImagePosXEl, roleBImagePosYEl, roleBImageSizeEl, roleBImageFlipEl);
+        }
+
+        ['input', 'change'].forEach(function (evt) {
+            sampleTextEl.addEventListener(evt, applyPreview);
+            fontNameEl.addEventListener(evt, applyPreview);
+            fontSizeEl.addEventListener(evt, applyPreview);
+            primaryColorEl.addEventListener(evt, applyPreview);
+            outlineColorEl.addEventListener(evt, applyPreview);
+            outlineEl.addEventListener(evt, applyPreview);
+            shadowEl.addEventListener(evt, applyPreview);
+            if (verticalOffsetEl) {
+                verticalOffsetEl.addEventListener(evt, applyPreview);
+            }
+            wrapLengthEl.addEventListener(evt, applyPreview);
+            if (roleAImagePosXEl) roleAImagePosXEl.addEventListener(evt, applyPreview);
+            if (roleAImagePosYEl) roleAImagePosYEl.addEventListener(evt, applyPreview);
+            if (roleAImageSizeEl) roleAImageSizeEl.addEventListener(evt, applyPreview);
+            if (roleAImageFlipEl) roleAImageFlipEl.addEventListener(evt, applyPreview);
+            if (roleBImagePosXEl) roleBImagePosXEl.addEventListener(evt, applyPreview);
+            if (roleBImagePosYEl) roleBImagePosYEl.addEventListener(evt, applyPreview);
+            if (roleBImageSizeEl) roleBImageSizeEl.addEventListener(evt, applyPreview);
+            if (roleBImageFlipEl) roleBImageFlipEl.addEventListener(evt, applyPreview);
+        });
+
+        if (roleAImagesInput) {
+            roleAImagesInput.addEventListener('change', function () {
+                if (roleAImgPreview && roleAImagesInput.files && roleAImagesInput.files[0]) {
+                    roleAImgPreview.src = URL.createObjectURL(roleAImagesInput.files[0]);
+                    applyPreview();
+                }
+            });
+        }
+        if (roleBImagesInput) {
+            roleBImagesInput.addEventListener('change', function () {
+                if (roleBImgPreview && roleBImagesInput.files && roleBImagesInput.files[0]) {
+                    roleBImgPreview.src = URL.createObjectURL(roleBImagesInput.files[0]);
+                    applyPreview();
+                }
+            });
+        }
+
+        applyPreview();
+    })();
+
+    // 根据上传视频或预设分辨率调整字幕预览区域的宽高比例
+    (function () {
+        var videoFileInput = document.getElementById('videoFile');
+        var previewContainer = document.getElementById('subtitlePreviewContainer');
+        var resolutionPresetEl = document.getElementById('subtitleResolutionPreset');
+        var exportPortraitEl = document.getElementById('exportPortrait');
+        if (!videoFileInput || !previewContainer) {
+            return;
+        }
+        var probeVideo = document.createElement('video');
+        probeVideo.style.display = 'none';
+        document.body.appendChild(probeVideo);
+        var lastVideoWidth = 0;
+        var lastVideoHeight = 0;
+
+        function resizeByRatio(vw, vh) {
+            if (!vw || !vh) return;
+            // 在不改变宽高比的前提下，将预览区域限制在一个较小的矩形内
+            var maxWidth = 640;
+            var maxHeight = 360;
+            var scale = Math.min(maxWidth / vw, maxHeight / vh);
+            var width = Math.round(vw * scale);
+            var height = Math.round(vh * scale);
+            previewContainer.style.maxWidth = width + "px";
+            previewContainer.style.height = height + "px";
+        }
+
+        function applyPresetResolution() {
+            if (!resolutionPresetEl) return;
+            var val = resolutionPresetEl.value;
+            // 若勾选导出竖屏，则优先使用 1080x1920 预览比例
+            if (exportPortraitEl && exportPortraitEl.checked) {
+                val = "1080x1920";
+            }
+            if (val === 'video' && lastVideoWidth > 0 && lastVideoHeight > 0) {
+                resizeByRatio(lastVideoWidth, lastVideoHeight);
+                return;
+            }
+            var vw = 1920, vh = 1080; // 默认 16:9
+            if (val && val.indexOf('x') > 0) {
+                var parts = val.split('x');
+                var pw = parseInt(parts[0], 10);
+                var ph = parseInt(parts[1], 10);
+                if (!isNaN(pw) && !isNaN(ph) && pw > 0 && ph > 0) {
+                    vw = pw;
+                    vh = ph;
+                }
+            }
+            resizeByRatio(vw, vh);
+        }
+
+        videoFileInput.addEventListener('change', function (e) {
+            var file = e.target.files && e.target.files[0];
+            if (!file) return;
+            var url = URL.createObjectURL(file);
+            probeVideo.src = url;
+            probeVideo.onloadedmetadata = function () {
+                var vw = probeVideo.videoWidth;
+                var vh = probeVideo.videoHeight;
+                if (!vw || !vh) return;
+                lastVideoWidth = vw;
+                lastVideoHeight = vh;
+                window.__subtitleVideoWidth = vw;
+                window.__subtitleVideoHeight = vh;
+                // 如果当前预设为“跟随上传视频”，则使用真实分辨率比例
+                applyPresetResolution();
+            };
+        });
+
+        if (resolutionPresetEl) {
+            resolutionPresetEl.addEventListener('change', applyPresetResolution);
+        }
+        if (exportPortraitEl) {
+            exportPortraitEl.addEventListener('change', applyPresetResolution);
+        }
+
+        // 初始按照默认预设（无视频时使用 1920x1080）
+        applyPresetResolution();
+    })();
+
+    // 背景音乐音量调节与试听预览
+    (function () {
+        var bgmInput = document.getElementById('bgmFile');
+        var bgmPreview = document.getElementById('bgmPreview');
+        var bgmVolumeEl = document.getElementById('bgmVolume');
+        var bgmVolumeText = document.getElementById('bgmVolumeText');
+
+        if (!bgmInput || !bgmPreview || !bgmVolumeEl) {
+            return;
+        }
+
+        function updateVolumeLabel() {
+            var v = parseFloat(bgmVolumeEl.value || '0.6');
+            if (isNaN(v) || v < 0) v = 0;
+            if (v > 1) v = 1;
+            bgmVolumeText.textContent = v.toFixed(2);
+            bgmPreview.volume = v;
+        }
+
+        bgmInput.addEventListener('change', function (e) {
+            var file = e.target.files && e.target.files[0];
+            if (!file) {
+                bgmPreview.style.display = 'none';
+                bgmPreview.removeAttribute('src');
+                return;
+            }
+            var url = URL.createObjectURL(file);
+            bgmPreview.src = url;
+            bgmPreview.style.display = 'block';
+            updateVolumeLabel();
+        });
+
+        bgmVolumeEl.addEventListener('input', updateVolumeLabel);
+        updateVolumeLabel();
+    })();
+
+    // 右侧：知乎 QA 总览 & 热榜抓取
+    (function () {
+        var overviewBtn = document.getElementById('loadQaOverviewBtn');
+        var overviewMsg = document.getElementById('qaOverviewMsg');
+        var overviewList = document.getElementById('qaOverviewList');
+        var hotBtn = document.getElementById('fetchHotQaBtn');
+        var hotMsg = document.getElementById('hotQaMsg');
+        var hotList = document.getElementById('hotQaList');
+        var cookieInput = document.getElementById('zhihuHotCookie');
+
+        function showMsg(el, text, isErr) {
+            el.textContent = text;
+            el.className = 'msg ' + (isErr ? 'err' : 'ok');
+            el.style.display = 'block';
+        }
+        function hideMsg(el) {
+            el.style.display = 'none';
+        }
+
+        function renderQaList(container, items) {
+            container.innerHTML = '';
+            if (!items || !items.length) {
+                var empty = document.createElement('div');
+                empty.style.color = '#9ca3af';
+                empty.style.fontSize = '0.85rem';
+                empty.textContent = '暂无数据。';
+                container.appendChild(empty);
+                return;
+            }
+            items.forEach(function (item, idx) {
+                var wrapper = document.createElement('div');
+                wrapper.style.borderBottom = '1px solid rgba(148,163,184,0.25)';
+                wrapper.style.padding = '0.35rem 0';
+
+                var header = document.createElement('div');
+                header.style.display = 'flex';
+                header.style.alignItems = 'center';
+                header.style.cursor = 'pointer';
+                header.style.fontSize = '0.9rem';
+                header.style.color = '#e5e7eb';
+                header.style.gap = '0.35rem';
+
+                var qid = item.questionId || '';
+                var title = item.title || '';
+                var bookmarked = String(item.bookmarked || 'false').toLowerCase() === 'true';
+
+                // 书签小圆点按钮
+                var bookmarkBtn = document.createElement('button');
+                bookmarkBtn.type = 'button';
+                bookmarkBtn.style.width = '10px';
+                bookmarkBtn.style.height = '10px';
+                bookmarkBtn.style.borderRadius = '999px';
+                bookmarkBtn.style.border = '1px solid #6b7280';
+                bookmarkBtn.style.backgroundColor = bookmarked ? '#22c55e' : 'transparent';
+                bookmarkBtn.style.cursor = 'pointer';
+                bookmarkBtn.style.flexShrink = '0';
+                bookmarkBtn.dataset.questionId = qid;
+                bookmarkBtn.dataset.title = title;
+                bookmarkBtn.dataset.bookmarked = bookmarked ? 'true' : 'false';
+
+                bookmarkBtn.addEventListener('click', function (ev) {
+                    ev.stopPropagation();
+                    var current = this.dataset.bookmarked === 'true';
+                    var next = !current;
+                    this.style.backgroundColor = next ? '#22c55e' : 'transparent';
+                    this.dataset.bookmarked = next ? 'true' : 'false';
+
+                    var body = new URLSearchParams();
+                    body.append('questionId', qid);
+                    body.append('title', title);
+                    body.append('bookmarked', next ? 'true' : 'false');
+
+                    fetch('${pageContext.request.contextPath}/api/bashboard/qa/bookmark', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                        },
+                        body: body.toString()
+                    }).catch(function () {
+                        // 失败时静默，不打断用户操作
+                    });
+                });
+
+                var indexSpan = document.createElement('span');
+                indexSpan.textContent = (item.index != null ? item.index : (idx + 1)) + '. ';
+                indexSpan.style.color = '#9ca3af';
+
+                var titleSpan = document.createElement('span');
+                titleSpan.textContent = item.title || ('问题 ' + (item.questionId || ''));
+
+                header.appendChild(bookmarkBtn);
+                header.appendChild(indexSpan);
+                header.appendChild(titleSpan);
+
+                var body = document.createElement('div');
+                body.style.display = 'none';
+                body.style.marginTop = '0.25rem';
+                body.style.fontSize = '0.85rem';
+                body.style.color = '#d1d5db';
+                body.style.lineHeight = '1.5';
+                body.style.maxHeight = '200px';
+                body.style.overflow = 'auto';
+
+                // 回答内容可能是 HTML，这里将其转成纯文本以便快速浏览
+                var raw = item.answerContent || '';
+                var tmp = document.createElement('div');
+                tmp.innerHTML = raw;
+                body.textContent = tmp.innerText || tmp.textContent || raw;
+
+                header.addEventListener('click', function () {
+                    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                });
+
+                wrapper.appendChild(header);
+                wrapper.appendChild(body);
+                container.appendChild(wrapper);
+            });
+        }
+
+        if (overviewBtn) {
+            overviewBtn.addEventListener('click', function () {
+                hideMsg(overviewMsg);
+                overviewList.innerHTML = '';
+                overviewBtn.disabled = true;
+                showMsg(overviewMsg, '正在从本地 QA.txt 加载问题总览……', false);
+
+                fetch('${pageContext.request.contextPath}/api/bashboard/qa/overview', {
+                    method: 'GET'
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (res.code === 200 && res.data) {
+                            renderQaList(overviewList, res.data);
+                            showMsg(overviewMsg, '加载完成。', false);
+                        } else {
+                            showMsg(overviewMsg, res.message || '加载失败。', true);
+                        }
+                    })
+                    .catch(function (err) {
+                        showMsg(overviewMsg, '请求失败：' + (err.message || err), true);
+                    })
+                    .finally(function () {
+                        overviewBtn.disabled = false;
+                    });
+            });
+        }
+
+        if (hotBtn) {
+            hotBtn.addEventListener('click', function () {
+                hideMsg(hotMsg);
+                hotList.innerHTML = '';
+                var cookie = (cookieInput && cookieInput.value ? cookieInput.value.trim() : '');
+                if (!cookie) {
+                    showMsg(hotMsg, '请先粘贴知乎 Cookie。', true);
+                    return;
+                }
+                hotBtn.disabled = true;
+                showMsg(hotMsg, '正在调用知乎热榜接口并抓取前 10 个问题的最高赞回答，这可能需要数十秒，请耐心等待……', false);
+
+                var body = new URLSearchParams();
+                body.append('cookie', cookie);
+
+                fetch('${pageContext.request.contextPath}/api/bashboard/zhihu/hot-qa', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+                    },
+                    body: body.toString()
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (res.code === 200 && res.data) {
+                            var items = res.data || [];
+                            var added = items.length;
+                            var total = 10; // 当前后端固定抓取前 10 条
+                            var skipped = total - added;
+                            renderQaList(hotList, items);
+                            showMsg(
+                                hotMsg,
+                                '抓取完成，本次新增 ' + added + ' 条，跳过 ' + skipped + ' 条已存在问题，并已写入本地 QA.txt。',
+                                false
+                            );
+                        } else {
+                            showMsg(hotMsg, res.message || '抓取失败。', true);
+                        }
+                    })
+                    .catch(function (err) {
+                        showMsg(hotMsg, '请求失败：' + (err.message || err), true);
+                    })
+                    .finally(function () {
+                        hotBtn.disabled = false;
                     });
             });
         }
