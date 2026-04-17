@@ -1,6 +1,6 @@
 # bilibili-chatVideo-generate
 
-本地部署的 B站 MC 跑酷 + 角色问答 视频生成网站（Spring + JSP）。
+本地部署的 B站 MC 跑酷 + 角色问答 视频生成网站（Spring + JSP）----详细案例参考B站上的熊大熊二对话答辩视频。
 
 ## 技术栈
 
