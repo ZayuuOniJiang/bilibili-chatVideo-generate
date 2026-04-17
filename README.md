@@ -54,4 +54,18 @@ mvn spring-boot:run
 - 6.点击生成文本之后可以尝试自己编辑。
 - 7.设置好视频格式，角色图片的位置，字幕的样式后即可导出视频。(可以为一个角色同时上传多个文件，这样就角色就可以在多个图片中轮询展示，让画面更有趣)
 - 8.最终的视频会导出在Result目录中
+
+## 效率
+
+- 1.实测2分钟即可完成一个8分钟的视频。
+
+## 开销
+
+- 1.语音生成qwen3-tts-vc-2026-01-22 快照版 0.8元/万字符
+- 2.文本生成qwen-turbo 0.3元/百万token
+
+## 爬取知乎数据
+
+- 1."https://www.zhihu.com/api/v4/questions/" + trimmedId + "/answers"
+- 2."https://api.zhihu.com/topstory/hot-list?limit=" + limit + "&reverse_order=0";
 ----------------------------------------------------
