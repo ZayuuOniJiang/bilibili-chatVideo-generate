@@ -14,6 +14,24 @@
 - `pojo`：Result、ApiError 等（Lombok）
 - `exception`：全局异常处理、BusinessException
 
+## 配置信息
+
+- 在application.yml文件中配置自己的信息
+```yml
+# 千问 / DashScope 配置
+dashscope:
+  api-key: {YOURKEY}
+  # 兼容模式 Responses API
+  base-url: https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1
+  responses-url: ${dashscope.base-url}/responses
+  model: qwen-turbo
+  # TTS 声音复刻与合成（北京地域）
+  api-v1: https://dashscope.aliyuncs.com/api/v1
+  tts-customization-url: ${dashscope.api-v1}/services/audio/tts/customization
+  tts-model: qwen3-tts-vc-2026-01-22
+  # 多模态生成 / TTS 生成（DashScope 官方路径为 multimodal-generation）
+  tts-generation-url: ${dashscope.api-v1}/services/aigc/multimodal-generation/generation
+```
 ## 运行
 
 ```bash
@@ -21,24 +39,19 @@ cd bilibili-chatVideo-generate
 mvn spring-boot:run
 ```
 
-默认端口 **8081**（若 8080 被占用可在 `application.properties` 中修改）。
+默认端口 **8081**（若 8081 被占用可在 `application.properties` 中修改）。
 
 - 首页：http://localhost:8081/
 - 接口测试：http://localhost:8081/api/hello
-- 异常测试：http://localhost:8081/api/error-test
-R
+
 ## 功能实现
 
-- 在首页有四个自定义可选框
-- 第一个选中resources目录中的已存在的跑酷视频.mp4
-- 第二个选项框用来输入音频训练素材。可以通过点击展开来选择单人视频模式和双人视频模式，单人视频模式必须上传一份音频素材，双人视频模式则必须输入两份音频素材
-- 第三个选项框负责输入摘抄自知乎的标题
-- 第四个选项用来输入摘抄自知乎的高赞文本回答
+- 1.用户上传模版跑酷视频。
+- 2.用户设置视频是单人模式还是双人模式。
+- 3.用户上传角色的音频文件
+- 4.用户设置角色的人设，并分配提问者和解答者。
+- 5.点击右侧的加载总览来查看知乎中的热门问题和最高赞回答(输入你知乎账号的cookie则会自动爬取当前知乎热门话题top10的问题和对应的最高赞回答，并留档在QA.TXT文件中)。
+- 6.点击生成文本之后可以尝试自己编辑。
+- 7.设置好视频格式，角色图片的位置，字幕的样式后即可导出视频。(可以为一个角色同时上传多个文件，这样就角色就可以在多个图片中轮询展示，让画面更有趣)
+- 8.最终的视频会导出在Result目录中
 ----------------------------------------------------
-## 操作流程
-
-- 操作一：首先将文本和标题交给输入好prompt提示词的千问模型中，输出的模板是{角色A：台词。/换行 角色B台词。/换行}
-- 操作二：将输出的模板在前端页面中进行展示，同时用户在查看模板的过程中可以进行文本的修改，审查完毕后点击"确认"按钮后即可将模板文本存储为"知乎问题".txt并存储到resources目录中的contents文件夹中
-- 操作三：读取contents目录中的"知乎问题".txt文件，将对应角色的第n句话进行提取，然后将台词和对应的角色训练素材打包传输给千问TTS的模型API中，生成的音频文件为阿里的oss地址，你可以通过okhttp3来下载这个音频文件存储到sounds文件夹并命名为"角色A/B"+"知乎问题"+"num(指角色的第几句话)"通过插件来查看这个音频文件的时长,然后将合成的音频文件插入提前准备好的resources目录中的视频中，要求角色间对话间隔1.5s
-- 操作四：不断轮询操作三，类似于角色A第一句话的音频时长为5s，那么通过ffmpeg将音频插入视频的0-5s中。接下来角色B的第一句话时长为3s，那么在视频的6.5s-9.5s中插入音频。以此不断循环直到文本全部读完。
-- 操作五：记录文本读完的最终时间，最后通过ffmpeg剪辑视频将视频在文本读完后进行结束
