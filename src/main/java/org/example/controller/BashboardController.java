@@ -6,6 +6,7 @@ import org.example.pojo.Result;
 import org.example.pojo.SubtitleStyleConfig;
 import org.example.service.BashboardService;
 import org.example.service.ZhihuService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +28,12 @@ public class BashboardController {
     private final BashboardService bashboardService;
     private final ZhihuService zhihuService;
 
+    @Value("${app.storage.qa-file:runtime-data/QA.txt}")
+    private String qaFilePath;
+
+    @Value("${app.storage.qa-legacy-file:src/main/resources/QA.txt}")
+    private String qaLegacyFilePath;
+
     /**
      * 仪表盘首页。
      */
@@ -43,10 +50,13 @@ public class BashboardController {
     @ResponseBody
     public Result<String> generateTemplate(
             @RequestParam("title") String title,
-            @RequestParam("content") String content
+            @RequestParam("content") String content,
+            @RequestParam(value = "roleAPersona", required = false) String roleAPersona,
+            @RequestParam(value = "roleBPersona", required = false) String roleBPersona,
+            @RequestParam(value = "targetWordCount", required = false) Integer targetWordCount
     ) {
         log.info("调用千问生成对话模板, title={}", title);
-        return bashboardService.generateDialogTemplate(title, content);
+        return bashboardService.generateDialogTemplate(title, content, roleAPersona, roleBPersona, targetWordCount);
     }
 
     /**
@@ -183,7 +193,7 @@ public class BashboardController {
     @GetMapping(value = "/api/bashboard/qa/overview", produces = "application/json")
     @ResponseBody
     public Result<java.util.List<java.util.Map<String, String>>> loadQaOverview() {
-        java.nio.file.Path path = java.nio.file.Paths.get("src/main/resources/QA.txt");
+        java.nio.file.Path path = resolveQaPathForRead();
         java.util.List<java.util.Map<String, String>> list = new java.util.ArrayList<>();
         if (!java.nio.file.Files.exists(path)) {
             return Result.ok(list);
@@ -194,6 +204,9 @@ public class BashboardController {
             int idx = 1;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
+                if (line.startsWith("\uFEFF")) {
+                    line = line.substring(1).trim();
+                }
                 if (line.isEmpty()) {
                     continue;
                 }
@@ -229,7 +242,7 @@ public class BashboardController {
             @RequestParam("title") String title,
             @RequestParam("bookmarked") String bookmarked
     ) {
-        java.nio.file.Path path = java.nio.file.Paths.get("src/main/resources/QA.txt");
+        java.nio.file.Path path = resolveQaPathForRead();
         if (!java.nio.file.Files.exists(path)) {
             return Result.ok();
         }
@@ -241,6 +254,9 @@ public class BashboardController {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
+                if (line.startsWith("\uFEFF")) {
+                    line = line.substring(1).trim();
+                }
                 if (line.isEmpty()) {
                     continue;
                 }
@@ -289,9 +305,12 @@ public class BashboardController {
      * - 返回本次真正新增写入的条目列表（用于前端显示“新增/跳过”情况）。
      */
     private java.util.List<java.util.Map<String, String>> mergeAndPersistQa(java.util.List<java.util.Map<String, String>> newItems) {
-        java.nio.file.Path path = java.nio.file.Paths.get("src/main/resources/QA.txt");
+        java.nio.file.Path path = resolveQaPathForWrite();
         try {
-            java.nio.file.Files.createDirectories(path.getParent());
+            java.nio.file.Path parent = path.getParent();
+            if (parent != null) {
+                java.nio.file.Files.createDirectories(parent);
+            }
         } catch (Exception e) {
             log.warn("创建 resources 目录失败", e);
             return new java.util.ArrayList<>();
@@ -307,6 +326,9 @@ public class BashboardController {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
+                    if (line.startsWith("\uFEFF")) {
+                        line = line.substring(1).trim();
+                    }
                     if (line.isEmpty()) {
                         continue;
                     }
@@ -364,6 +386,22 @@ public class BashboardController {
             log.warn("写入 QA.txt 失败", e);
         }
         return added;
+    }
+
+    private java.nio.file.Path resolveQaPathForWrite() {
+        return java.nio.file.Paths.get(qaFilePath);
+    }
+
+    private java.nio.file.Path resolveQaPathForRead() {
+        java.nio.file.Path primary = java.nio.file.Paths.get(qaFilePath);
+        if (java.nio.file.Files.exists(primary)) {
+            return primary;
+        }
+        java.nio.file.Path legacy = java.nio.file.Paths.get(qaLegacyFilePath);
+        if (java.nio.file.Files.exists(legacy)) {
+            return legacy;
+        }
+        return primary;
     }
 }
 

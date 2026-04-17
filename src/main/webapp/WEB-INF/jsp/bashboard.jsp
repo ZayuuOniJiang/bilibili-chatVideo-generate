@@ -299,6 +299,18 @@
                 <label>4. 知乎高赞文本回答</label>
                 <textarea name="content" id="contentInput" placeholder="请输入对应的高赞回答全文"></textarea>
             </div>
+                <div class="input-group">
+                    <label>角色A 人设（用于模板生成）</label>
+                    <input type="text" id="promptRoleAPersona" placeholder="例如：雷军，擅长用通俗比喻提问" value="开放式提问者" />
+                </div>
+                <div class="input-group">
+                    <label>角色B 人设（用于模板生成）</label>
+                    <input type="text" id="promptRoleBPersona" placeholder="例如：技术专家，回答清晰有条理" value="理性解答者" />
+                </div>
+                <div class="input-group">
+                    <label>模板目标字数（约）</label>
+                    <input type="number" id="promptTargetWordCount" min="200" max="5000" value="1200" />
+                </div>
 
             <div style="margin-top:0.75rem;">
                 <label>
@@ -331,7 +343,7 @@
 
             <div class="card">
                 <h2>知乎热榜抓取（questionId + 最高赞回答）</h2>
-                <p class="sub">输入你在知乎网页中复制的 Cookie，后台会调用知乎热榜接口 <code>topstory/hot-list</code> 拉取前 10 个问题，并为每个问题抓取当前最高赞回答，同时写入本地 <code>resources/QA.txt</code>。</p>
+                <p class="sub">输入你在知乎网页中复制的 Cookie，后台会调用知乎热榜接口 <code>topstory/hot-list</code> 拉取前 10 个问题，并为每个问题抓取当前最高赞回答，同时写入本地 <code>runtime-data/QA.txt</code>（若历史数据在旧路径也会兼容读取）。</p>
                 <label>知乎 Cookie（必填）</label>
                 <textarea id="zhihuHotCookie" placeholder="请粘贴你在知乎网页中复制的完整 Cookie" style="width:100%;min-height:80px;"></textarea>
                 <button type="button" class="btn" id="fetchHotQaBtn" style="margin-top:0.5rem;">抓取知乎热榜前 10 条问答</button>
@@ -451,6 +463,9 @@
         var titleInput = document.getElementById('titleInput');
         var contentInput = document.getElementById('contentInput');
         var templateBox = document.getElementById('templateBox');
+        var promptRoleAPersona = document.getElementById('promptRoleAPersona');
+        var promptRoleBPersona = document.getElementById('promptRoleBPersona');
+        var promptTargetWordCount = document.getElementById('promptTargetWordCount');
 
         function showMsg(el, text, isErr) {
             el.textContent = text;
@@ -465,6 +480,12 @@
             hideMsg(generateMsg);
             var title = (titleInput.value || '').trim();
             var content = (contentInput.value || '').trim();
+            var roleAPersona = promptRoleAPersona ? (promptRoleAPersona.value || '').trim() : '';
+            var roleBPersona = promptRoleBPersona ? (promptRoleBPersona.value || '').trim() : '';
+            var targetWordCount = promptTargetWordCount ? (promptTargetWordCount.value || '').trim() : '';
+            if (!targetWordCount) {
+                targetWordCount = '1200';
+            }
             if (!title) {
                 showMsg(generateMsg, '请先填写知乎标题。', true);
                 return;
@@ -479,7 +500,11 @@
             fetch('${pageContext.request.contextPath}/api/bashboard/generate-template', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-                body: 'title=' + encodeURIComponent(title) + '&content=' + encodeURIComponent(content)
+                body: 'title=' + encodeURIComponent(title)
+                    + '&content=' + encodeURIComponent(content)
+                    + '&roleAPersona=' + encodeURIComponent(roleAPersona)
+                    + '&roleBPersona=' + encodeURIComponent(roleBPersona)
+                    + '&targetWordCount=' + encodeURIComponent(targetWordCount)
             })
                 .then(function (r) { return r.json(); })
                 .then(function (res) {

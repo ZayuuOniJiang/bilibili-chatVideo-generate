@@ -20,7 +20,13 @@ public interface BashboardService {
      * @param content 高赞文本回答
      * @return 模板文本，使用 {@link Result#ok(Object)} 封装
      */
-    Result<String> generateDialogTemplate(String title, String content);
+        Result<String> generateDialogTemplate(
+            String title,
+            String content,
+            String roleAPersona,
+            String roleBPersona,
+            Integer targetWordCount
+        );
 
     /**
      * 操作二 ~ 五：前端在用户确认模板后，提交模板 + 跑酷视频 + 训练音频，

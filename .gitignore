@@ -35,5 +35,18 @@ build/
 ### VS Code ###
 .vscode/
 
+### Runtime And Generated Assets ###
+Result/
+runtime-data/
+src/main/resources/videos/
+src/main/resources/sounds/
+src/main/resources/contents/
+
+### Local Secrets ###
+src/main/resources/application.yml
+
+### Local IDE State ###
+.idea/
+
 ### Mac OS ###
 .DS_Store

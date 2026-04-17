@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -41,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * /bashboard 页面整体流程实现。
@@ -53,7 +56,7 @@ public class BashboardServiceImpl implements BashboardService {
     private final QwenTtsService qwenTtsService;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final OkHttpClient okHttpClient = new OkHttpClient();
+    private OkHttpClient okHttpClient;
 
     @Value("${dashscope.api-key}")
     private String apiKey;
@@ -70,13 +73,76 @@ public class BashboardServiceImpl implements BashboardService {
     @Value("classpath:ffmpeg/ffprobe.exe")
     private Resource ffprobeExecutable;
 
+    @Value("${ffmpeg.video.codec:libx264}")
+    private String ffmpegVideoCodec;
+
+    @Value("${ffmpeg.video.preset:faster}")
+    private String ffmpegVideoPreset;
+
+    @Value("${ffmpeg.video.crf:23}")
+    private String ffmpegVideoCrf;
+
+    @Value("${ffmpeg.video.threads:0}")
+    private String ffmpegVideoThreads;
+
+    @Value("${app.storage.contents-dir:runtime-data/contents}")
+    private String contentsDirPath;
+
+    @Value("${app.storage.sounds-dir:runtime-data/sounds}")
+    private String soundsDirPath;
+
+    @Value("${download.http.connect-timeout-ms:5000}")
+    private long downloadConnectTimeoutMs;
+
+    @Value("${download.http.read-timeout-ms:120000}")
+    private long downloadReadTimeoutMs;
+
+    @Value("${download.http.write-timeout-ms:30000}")
+    private long downloadWriteTimeoutMs;
+
+    @Value("${download.http.call-timeout-ms:180000}")
+    private long downloadCallTimeoutMs;
+
     private volatile String ffmpegPath;
     private volatile String ffprobePath;
 
     private static final double DIALOG_GAP_SECONDS = 1.5;
 
+    @PostConstruct
+    private void initHttpClient() {
+        this.okHttpClient = new OkHttpClient.Builder()
+                .connectTimeout(downloadConnectTimeoutMs, TimeUnit.MILLISECONDS)
+                .readTimeout(downloadReadTimeoutMs, TimeUnit.MILLISECONDS)
+                .writeTimeout(downloadWriteTimeoutMs, TimeUnit.MILLISECONDS)
+                .callTimeout(downloadCallTimeoutMs, TimeUnit.MILLISECONDS)
+                .build();
+    }
+
+    @PreDestroy
+    private void shutdownHttpClient() {
+        if (okHttpClient == null) {
+            return;
+        }
+        try {
+            okHttpClient.dispatcher().executorService().shutdown();
+            okHttpClient.connectionPool().evictAll();
+            okhttp3.Cache cache = okHttpClient.cache();
+            if (cache != null) {
+                cache.close();
+            }
+        } catch (Exception e) {
+            log.warn("关闭 OkHttpClient 资源失败", e);
+        }
+    }
+
     @Override
-    public Result<String> generateDialogTemplate(String title, String content) {
+        public Result<String> generateDialogTemplate(
+            String title,
+            String content,
+            String roleAPersona,
+            String roleBPersona,
+            Integer targetWordCount
+        ) {
         if (title == null || title.trim().isEmpty()) {
             return Result.fail(400, "知乎标题不能为空");
         }
@@ -90,7 +156,7 @@ public class BashboardServiceImpl implements BashboardService {
             return Result.fail(500, "DashScope Responses URL 未配置");
         }
 
-        String prompt = buildPrompt(title.trim(), content.trim());
+        String prompt = buildPrompt(title.trim(), content.trim(), roleAPersona, roleBPersona, targetWordCount);
 
         ObjectNode body = objectMapper.createObjectNode();
         body.put("model", dashscopeModel);
@@ -196,8 +262,8 @@ public class BashboardServiceImpl implements BashboardService {
 
         // 1. 保存模板到 contents 目录，文件名基于知乎标题
         String fileName = buildQuestionFileName(title);
-        Path contentsDir = Paths.get("src/main/resources/contents");
-        Path soundsBaseDir = Paths.get("src/main/resources/sounds");
+        Path contentsDir = Paths.get(contentsDirPath);
+        Path soundsBaseDir = Paths.get(soundsDirPath);
         try {
             Files.createDirectories(contentsDir);
             Files.createDirectories(soundsBaseDir);
@@ -342,7 +408,11 @@ public class BashboardServiceImpl implements BashboardService {
                 roleIndex = indexB;
             }
 
-            String text = utterance.text;
+            String text = sanitizeUtteranceText(
+                    utterance.text,
+                    roleLabel,
+                    "A".equals(utterance.role) ? labelB : labelA
+            );
             if (text == null || text.trim().isEmpty()) {
                 continue;
             }
@@ -557,14 +627,66 @@ public class BashboardServiceImpl implements BashboardService {
         return Result.ok(finalPath);
     }
 
-    private String buildPrompt(String title, String content) {
+    private String buildPrompt(String title, String content, String roleAPersona, String roleBPersona, Integer targetWordCount) {
+        String personaA = normalizePersona(roleAPersona, "开放式提问者");
+        String personaB = normalizePersona(roleBPersona, "理性解答者");
+        int words = targetWordCount == null ? 1200 : Math.max(200, Math.min(5000, targetWordCount));
         return "你现在是一个专门用来返回文本的接口机器人。"
                 + "你要根据我接下来给你的摘抄自知乎的标题和文本展开角色A和角色B的对话。"
-                + "其中角色A扮演《熊出没》中的熊二，负责提问者；角色B扮演《熊出没》中的熊大，担当理性的回答者。"
+                + "其中角色A的人设是：" + personaA + "；角色B的人设是：" + personaB + "。"
                 + "请严格按“角色A：台词。/换行 角色B：台词。/换行”的形式输出，每一句单独一行，只允许出现角色A或角色B两个角色。"
-                + "格式类似于{角色A：台词。 /换行  角色B：台词。 /换行}这样的形式，不要让:前面不要加熊大熊二"
+                + "格式类似于{角色A：台词。 /换行  角色B：台词。 /换行}这样的形式，不要在角色A或角色B后重复附加其他称呼前缀。"
                 + "标题内容为：{" + title + "}，文本内容为：{" + content + "}。"
-                + "你可以根据输入的文本进行合理扩展，尽量让最终输出的模板控制在 1200 字左右。";
+                + "你可以根据输入的文本进行合理扩展，尽量让最终输出的模板控制在 " + words + " 字左右。";
+    }
+
+    private String normalizePersona(String persona, String defaultValue) {
+        if (persona == null || persona.trim().isEmpty()) {
+            return defaultValue;
+        }
+        String p = persona.trim();
+        if (p.length() > 120) {
+            p = p.substring(0, 120);
+        }
+        return p;
+    }
+
+    private String sanitizeUtteranceText(String text, String currentRoleLabel, String otherRoleLabel) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = text.trim();
+        List<String> prefixes = new ArrayList<>();
+        prefixes.add("角色A");
+        prefixes.add("角色B");
+        prefixes.add("熊大");
+        prefixes.add("熊二");
+        if (currentRoleLabel != null && !currentRoleLabel.trim().isEmpty()) {
+            prefixes.add(currentRoleLabel.trim());
+        }
+        if (otherRoleLabel != null && !otherRoleLabel.trim().isEmpty()) {
+            prefixes.add(otherRoleLabel.trim());
+        }
+
+        for (int i = 0; i < 3; i++) {
+            boolean stripped = false;
+            for (String p : prefixes) {
+                if (normalized.startsWith(p + "：")) {
+                    normalized = normalized.substring((p + "：").length()).trim();
+                    stripped = true;
+                    break;
+                }
+                if (normalized.startsWith(p + ":")) {
+                    normalized = normalized.substring((p + ":").length()).trim();
+                    stripped = true;
+                    break;
+                }
+            }
+            if (!stripped) {
+                break;
+            }
+        }
+        return normalized;
     }
 
     private String buildQuestionFileName(String title) {
@@ -801,6 +923,9 @@ public class BashboardServiceImpl implements BashboardService {
         // 先将高度缩放到 1920，再居中裁剪宽度到 1080
         command.add("-vf");
         command.add("scale=-2:1920,crop=1080:1920");
+        appendVideoEncodeArgs(command);
+        command.add("-pix_fmt");
+        command.add("yuv420p");
         command.add("-c:a");
         command.add("copy");
         command.add(outputVideo.getAbsolutePath());
@@ -1031,6 +1156,9 @@ public class BashboardServiceImpl implements BashboardService {
         // 映射最终叠加后的滤镜输出标签（例如 [v3]）
         command.add("-map");
         command.add("[" + currentVideoLabel + "]");
+        appendVideoEncodeArgs(command);
+        command.add("-pix_fmt");
+        command.add("yuv420p");
         // 音频直接沿用原视频
         command.add("-map");
         command.add("0:a?");
@@ -1241,6 +1369,9 @@ public class BashboardServiceImpl implements BashboardService {
         String filter = "subtitles=" + assFile.getName();
         command.add("-vf");
         command.add(filter);
+        appendVideoEncodeArgs(command);
+        command.add("-pix_fmt");
+        command.add("yuv420p");
         command.add("-c:a");
         command.add("copy");
         command.add(outputVideo.getAbsolutePath());
@@ -1534,6 +1665,35 @@ public class BashboardServiceImpl implements BashboardService {
                 log.info("ffmpeg 合成成功");
             }
         }
+    }
+
+    /**
+     * 为需要重编码的视频步骤追加统一编码参数。
+     * 保持默认值稳健，同时可通过配置调优性能与画质。
+     */
+    private void appendVideoEncodeArgs(List<String> command) {
+        String codec = safeValue(ffmpegVideoCodec, "libx264");
+        String preset = safeValue(ffmpegVideoPreset, "faster");
+        String crf = safeValue(ffmpegVideoCrf, "23");
+        String threads = safeValue(ffmpegVideoThreads, "0");
+
+        command.add("-c:v");
+        command.add(codec);
+        command.add("-preset");
+        command.add(preset);
+        command.add("-crf");
+        command.add(crf);
+        command.add("-threads");
+        command.add(threads);
+        command.add("-movflags");
+        command.add("+faststart");
+    }
+
+    private String safeValue(String value, String defaultValue) {
+        if (value == null || value.trim().isEmpty()) {
+            return defaultValue;
+        }
+        return value.trim();
     }
 
     private static class Utterance {

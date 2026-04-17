@@ -7,9 +7,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.service.QwenTtsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import javax.annotation.PostConstruct;
 import java.util.Base64;
 
 /**
@@ -31,9 +33,23 @@ public class QwenTtsServiceImpl implements QwenTtsService {
     @Value("${dashscope.tts-generation-url}")
     private String generationUrl;
 
+    @Value("${dashscope.http.connect-timeout-ms:5000}")
+    private int connectTimeoutMs;
+
+    @Value("${dashscope.http.read-timeout-ms:120000}")
+    private int readTimeoutMs;
+
     private static final String ENROLLMENT_MODEL = "qwen-voice-enrollment";
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @PostConstruct
+    private void initHttpTimeouts() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
+        restTemplate.setRequestFactory(requestFactory);
+    }
 
     @Override
     public String createVoice(byte[] audioBytes, String preferredName, String audioMimeType) {
