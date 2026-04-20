@@ -16,9 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- * /bashboard 仪表盘：承载 README 中描述的整体业务流程。
- */
+
 @Slf4j
 @Controller
 @RequiredArgsConstructor
