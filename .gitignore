@@ -37,7 +37,8 @@ build/
 
 ### Runtime And Generated Assets ###
 Result/
-runtime-data/
+runtime-data/contents
+runtime-data/sounds
 src/main/resources/videos/
 src/main/resources/sounds/
 src/main/resources/contents/
