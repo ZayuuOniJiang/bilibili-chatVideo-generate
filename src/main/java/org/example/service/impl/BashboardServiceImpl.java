@@ -444,14 +444,37 @@ public class BashboardServiceImpl implements BashboardService {
             audioFiles.add(audioFile);
             startTimes.add(cursor);
 
-            // 同步构建字幕条目：开始时间为当前 cursor，结束时间为 cursor + 音频时长
-            SubtitleEntry entry = new SubtitleEntry();
-            entry.index = subtitleEntries.size() + 1;
-            entry.startSec = cursor;
-            entry.endSec = cursor + duration;
-            String fullText = roleLabel + "：" + text.trim();
-            entry.text = applyWrap(fullText, subtitleStyle);
-            subtitleEntries.add(entry);
+            // 同步构建字幕条目：按逗号/句号分句后分段显示，整句时长不变
+            String normalizedText = text.trim();
+            List<String> subtitleChunks = splitSubtitleChunksByPunctuation(normalizedText);
+            if (subtitleChunks.isEmpty()) {
+                subtitleChunks.add(normalizedText);
+            }
+            int totalWeight = 0;
+            for (String chunk : subtitleChunks) {
+                totalWeight += Math.max(1, chunk.replace(" ", "").length());
+            }
+            double segStart = cursor;
+            for (int i = 0; i < subtitleChunks.size(); i++) {
+                String chunk = subtitleChunks.get(i);
+                int weight = Math.max(1, chunk.replace(" ", "").length());
+                double segDuration;
+                if (i == subtitleChunks.size() - 1) {
+                    segDuration = (cursor + duration) - segStart;
+                } else {
+                    segDuration = duration * weight / totalWeight;
+                }
+
+                SubtitleEntry entry = new SubtitleEntry();
+                entry.index = subtitleEntries.size() + 1;
+                entry.startSec = segStart;
+                entry.endSec = Math.max(segStart, segStart + segDuration);
+                String fullText = roleLabel + "：" + chunk;
+                entry.text = applyWrap(fullText, subtitleStyle);
+                subtitleEntries.add(entry);
+
+                segStart = entry.endSec;
+            }
 
             // 为对应角色新增一段立绘时间片，先记录当前句的起止时间，
             // 后续会按「延长到下一次同角色说话开始时间 / 对话结束时间」再统一调整。
@@ -1292,6 +1315,45 @@ public class BashboardServiceImpl implements BashboardService {
             result.append(lines.get(i));
         }
         return result.toString();
+    }
+
+    /**
+     * 按逗号与句号切分字幕片段，保留分隔符在当前片段末尾。
+     */
+    private List<String> splitSubtitleChunksByPunctuation(String text) {
+        List<String> chunks = new ArrayList<>();
+        if (text == null) {
+            return chunks;
+        }
+        String normalized = text.trim();
+        if (normalized.isEmpty()) {
+            return chunks;
+        }
+
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            current.append(ch);
+            if (isSubtitleSplitPunctuation(ch)) {
+                String piece = current.toString().trim();
+                if (!piece.isEmpty()) {
+                    chunks.add(piece);
+                }
+                current.setLength(0);
+            }
+        }
+
+        if (current.length() > 0) {
+            String piece = current.toString().trim();
+            if (!piece.isEmpty()) {
+                chunks.add(piece);
+            }
+        }
+        return chunks;
+    }
+
+    private boolean isSubtitleSplitPunctuation(char ch) {
+        return ch == '，' || ch == ',' || ch == '。' || ch == '.';
     }
 
     /**
