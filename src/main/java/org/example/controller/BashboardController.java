@@ -191,37 +191,37 @@ public class BashboardController {
     @GetMapping(value = "/api/bashboard/qa/overview", produces = "application/json")
     @ResponseBody
     public Result<java.util.List<java.util.Map<String, String>>> loadQaOverview() {
-        java.nio.file.Path path = resolveQaPathForRead();
         java.util.List<java.util.Map<String, String>> list = new java.util.ArrayList<>();
-        if (!java.nio.file.Files.exists(path)) {
+        java.util.List<java.nio.file.Path> readPaths = resolveQaPathsForOverviewRead();
+        if (readPaths.isEmpty()) {
+            log.info("QA 总览读取：未找到可读取的 QA 文件");
             return Result.ok(list);
         }
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(path, java.nio.charset.StandardCharsets.UTF_8)) {
-            String line;
+        try {
+            java.util.List<java.util.Map<String, String>> parsed = new java.util.ArrayList<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (java.nio.file.Path p : readPaths) {
+                java.util.List<java.util.Map<String, String>> one = parseQaRecords(p);
+                for (java.util.Map<String, String> m : one) {
+                    String qid = m.getOrDefault("questionId", "").trim();
+                    String title = m.getOrDefault("title", "").trim();
+                    String answer = m.getOrDefault("answerContent", "").trim();
+                    String dedupKey = qid + "||" + title + "||" + answer;
+                    if (seen.add(dedupKey)) {
+                        parsed.add(m);
+                    }
+                }
+            }
             int idx = 1;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.startsWith("\uFEFF")) {
-                    line = line.substring(1).trim();
-                }
-                if (line.isEmpty()) {
-                    continue;
-                }
-                try {
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, String> m = mapper.readValue(line, java.util.LinkedHashMap.class);
-                    java.util.Map<String, String> item = new java.util.LinkedHashMap<>();
-                    item.put("index", String.valueOf(idx));
-                    item.put("questionId", m.getOrDefault("questionId", ""));
-                    item.put("title", m.getOrDefault("title", ""));
-                    item.put("answerContent", m.getOrDefault("answerContent", ""));
-                    item.put("bookmarked", m.getOrDefault("bookmarked", "false"));
-                    list.add(item);
-                    idx++;
-                } catch (Exception e) {
-                    log.warn("解析 QA.txt 某行失败，line={}", line, e);
-                }
+            for (java.util.Map<String, String> m : parsed) {
+                java.util.Map<String, String> item = new java.util.LinkedHashMap<>();
+                item.put("index", String.valueOf(idx));
+                item.put("questionId", m.getOrDefault("questionId", ""));
+                item.put("title", m.getOrDefault("title", ""));
+                item.put("answerContent", m.getOrDefault("answerContent", ""));
+                item.put("bookmarked", m.getOrDefault("bookmarked", "false"));
+                list.add(item);
+                idx++;
             }
         } catch (Exception e) {
             log.warn("读取 QA.txt 失败", e);
@@ -399,7 +399,255 @@ public class BashboardController {
         if (java.nio.file.Files.exists(legacy)) {
             return legacy;
         }
+        java.nio.file.Path runtimeUpper = java.nio.file.Paths.get("runtime-data", "QA.TXT");
+        if (java.nio.file.Files.exists(runtimeUpper)) {
+            return runtimeUpper;
+        }
+        java.nio.file.Path resourcesUpper = java.nio.file.Paths.get("src", "main", "resources", "QA.TXT");
+        if (java.nio.file.Files.exists(resourcesUpper)) {
+            return resourcesUpper;
+        }
         return primary;
+    }
+
+    private java.util.List<java.nio.file.Path> resolveQaPathsForOverviewRead() {
+        java.util.List<java.nio.file.Path> candidates = java.util.Arrays.asList(
+                java.nio.file.Paths.get(qaFilePath),
+                java.nio.file.Paths.get(qaLegacyFilePath),
+                java.nio.file.Paths.get("runtime-data", "QA.TXT"),
+                java.nio.file.Paths.get("src", "main", "resources", "QA.TXT")
+        );
+        java.util.List<java.nio.file.Path> paths = new java.util.ArrayList<>();
+        java.util.Set<String> seenAbs = new java.util.HashSet<>();
+        for (java.nio.file.Path p : candidates) {
+            try {
+                if (!java.nio.file.Files.exists(p)) {
+                    continue;
+                }
+                String abs = p.toAbsolutePath().normalize().toString();
+                if (seenAbs.add(abs)) {
+                    paths.add(p);
+                }
+            } catch (Exception ignore) {
+                // 忽略异常候选路径
+            }
+        }
+        return paths;
+    }
+
+    private java.util.List<java.util.Map<String, String>> parseQaRecords(java.nio.file.Path path) throws java.io.IOException {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.util.List<java.util.Map<String, String>> result = new java.util.ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        String content = new String(java.nio.file.Files.readAllBytes(path), java.nio.charset.StandardCharsets.UTF_8);
+        if (content.startsWith("\uFEFF")) {
+            content = content.substring(1);
+        }
+        String trimmed = content.trim();
+
+        if (!trimmed.isEmpty()) {
+            if (trimmed.startsWith("[")) {
+                try {
+                    com.fasterxml.jackson.databind.JsonNode arr = mapper.readTree(trimmed);
+                    if (arr.isArray()) {
+                        for (com.fasterxml.jackson.databind.JsonNode node : arr) {
+                            java.util.Map<String, String> m = jsonNodeToQaMap(node);
+                            addIfValid(result, seen, m);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("QA 文件按 JSON 数组解析失败，回退到逐行解析，path={}", path.toAbsolutePath(), e);
+                }
+            } else if (trimmed.startsWith("{")) {
+                try {
+                    com.fasterxml.jackson.databind.JsonNode obj = mapper.readTree(trimmed);
+                    // 支持容器结构：{"data":[...]}, {"items":[...]} 等
+                    collectQaRecordsFromNode(obj, result, seen);
+                } catch (Exception e) {
+                    log.warn("QA 文件按单个 JSON 对象解析失败，回退到逐行解析，path={}", path.toAbsolutePath(), e);
+                }
+            }
+        }
+
+        java.util.List<String> lines = java.nio.file.Files.readAllLines(path, java.nio.charset.StandardCharsets.UTF_8);
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.startsWith("\uFEFF")) {
+                line = line.substring(1).trim();
+            }
+            if (line.isEmpty()) {
+                continue;
+            }
+            try {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, String> m = mapper.readValue(line, java.util.LinkedHashMap.class);
+                addIfValid(result, seen, normalizeQaMap(m));
+            } catch (Exception ignore) {
+                // 继续尝试文本键值格式解析
+            }
+        }
+
+        if (!result.isEmpty()) {
+            return result;
+        }
+
+        return parseQaTextBlocks(lines, seen);
+    }
+
+    private java.util.List<java.util.Map<String, String>> parseQaTextBlocks(
+            java.util.List<String> lines,
+            java.util.Set<String> seen
+    ) {
+        java.util.List<java.util.Map<String, String>> result = new java.util.ArrayList<>();
+        java.util.Map<String, String> current = new java.util.LinkedHashMap<>();
+        StringBuilder answerBuilder = new StringBuilder();
+
+        for (String rawLine : lines) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.startsWith("\uFEFF")) {
+                line = line.substring(1).trim();
+            }
+            if (line.isEmpty() || line.startsWith("---")) {
+                flushTextBlockRecord(result, seen, current, answerBuilder);
+                continue;
+            }
+
+            String lower = line.toLowerCase(java.util.Locale.ROOT);
+            if (lower.startsWith("questionid") || lower.startsWith("question_id") || line.startsWith("问题ID")) {
+                current.put("questionId", extractKvValue(line));
+            } else if (lower.startsWith("title") || line.startsWith("标题") || line.startsWith("问题标题")) {
+                current.put("title", extractKvValue(line));
+            } else if (lower.startsWith("bookmarked") || line.startsWith("书签")) {
+                String v = extractKvValue(line);
+                current.put("bookmarked", "true".equalsIgnoreCase(v) ? "true" : "false");
+            } else if (lower.startsWith("answercontent") || line.startsWith("回答") || line.startsWith("答案")) {
+                String v = extractKvValue(line);
+                if (!v.isEmpty()) {
+                    if (answerBuilder.length() > 0) {
+                        answerBuilder.append("\n");
+                    }
+                    answerBuilder.append(v);
+                }
+            } else {
+                if (answerBuilder.length() > 0) {
+                    answerBuilder.append("\n");
+                }
+                answerBuilder.append(line);
+            }
+        }
+        flushTextBlockRecord(result, seen, current, answerBuilder);
+        return result;
+    }
+
+    private void flushTextBlockRecord(
+            java.util.List<java.util.Map<String, String>> result,
+            java.util.Set<String> seen,
+            java.util.Map<String, String> current,
+            StringBuilder answerBuilder
+    ) {
+        if (answerBuilder.length() > 0 && !current.containsKey("answerContent")) {
+            current.put("answerContent", answerBuilder.toString().trim());
+        }
+        addIfValid(result, seen, normalizeQaMap(current));
+        current.clear();
+        answerBuilder.setLength(0);
+    }
+
+    private java.util.Map<String, String> jsonNodeToQaMap(com.fasterxml.jackson.databind.JsonNode node) {
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        if (node == null || node.isNull()) {
+            return normalizeQaMap(m);
+        }
+        m.put("questionId", node.path("questionId").asText(""));
+        m.put("title", node.path("title").asText(""));
+        m.put("answerContent", node.path("answerContent").asText(""));
+        m.put("bookmarked", node.path("bookmarked").asText("false"));
+        return normalizeQaMap(m);
+    }
+
+    private void collectQaRecordsFromNode(
+            com.fasterxml.jackson.databind.JsonNode node,
+            java.util.List<java.util.Map<String, String>> result,
+            java.util.Set<String> seen
+    ) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode item : node) {
+                collectQaRecordsFromNode(item, result, seen);
+            }
+            return;
+        }
+        if (!node.isObject()) {
+            return;
+        }
+
+        // 先尝试把当前对象当作 QA 记录
+        addIfValid(result, seen, jsonNodeToQaMap(node));
+
+        // 再递归尝试常见容器字段
+        String[] containerKeys = new String[] {"data", "items", "list", "records", "rows", "result"};
+        for (String key : containerKeys) {
+            com.fasterxml.jackson.databind.JsonNode child = node.get(key);
+            if (child != null && !child.isNull()) {
+                collectQaRecordsFromNode(child, result, seen);
+            }
+        }
+    }
+
+    private java.util.Map<String, String> normalizeQaMap(java.util.Map<String, String> source) {
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        String qid = source == null ? "" : source.getOrDefault("questionId", "");
+        String title = source == null ? "" : source.getOrDefault("title", "");
+        String answer = source == null ? "" : source.getOrDefault("answerContent", "");
+        String bookmarked = source == null ? "false" : source.getOrDefault("bookmarked", "false");
+
+        m.put("questionId", qid == null ? "" : qid.trim());
+        m.put("title", title == null ? "" : title.trim());
+        m.put("answerContent", answer == null ? "" : answer.trim());
+        m.put("bookmarked", "true".equalsIgnoreCase(bookmarked) ? "true" : "false");
+        return m;
+    }
+
+    private void addIfValid(
+            java.util.List<java.util.Map<String, String>> result,
+            java.util.Set<String> seen,
+            java.util.Map<String, String> m
+    ) {
+        if (m == null) {
+            return;
+        }
+        String qid = m.getOrDefault("questionId", "").trim();
+        String title = m.getOrDefault("title", "").trim();
+        String answer = m.getOrDefault("answerContent", "").trim();
+        if (qid.isEmpty() && title.isEmpty() && answer.isEmpty()) {
+            return;
+        }
+        String dedupKey = qid + "||" + title + "||" + answer;
+        if (seen.contains(dedupKey)) {
+            return;
+        }
+        seen.add(dedupKey);
+        result.add(m);
+    }
+
+    private String extractKvValue(String line) {
+        if (line == null) {
+            return "";
+        }
+        int idx = line.indexOf(':');
+        if (idx < 0) {
+            idx = line.indexOf('：');
+        }
+        if (idx < 0) {
+            idx = line.indexOf('=');
+        }
+        if (idx < 0 || idx >= line.length() - 1) {
+            return "";
+        }
+        return line.substring(idx + 1).trim();
     }
 }
 

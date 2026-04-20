@@ -413,7 +413,16 @@
                     <label>每行最多字数</label>
                     <input type="number" id="subtitleWrapLength" value="12" min="5" max="40" />
                     <label>字体名称</label>
-                    <input type="text" id="subtitleFontName" value="Microsoft YaHei" />
+                    <select id="subtitleFontName">
+                        <option value="Microsoft YaHei" selected>微软雅黑（Microsoft YaHei）</option>
+                        <option value="SimHei">黑体（SimHei）</option>
+                        <option value="SimSun">宋体（SimSun）</option>
+                        <option value="KaiTi">楷体（KaiTi）</option>
+                        <option value="FangSong">仿宋（FangSong）</option>
+                        <option value="DengXian">等线（DengXian）</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                    </select>
                     <label>字号（px）</label>
                     <input type="text" id="subtitleFontSize" value="85" />
                     <label>文字颜色（#RRGGBB）</label>
