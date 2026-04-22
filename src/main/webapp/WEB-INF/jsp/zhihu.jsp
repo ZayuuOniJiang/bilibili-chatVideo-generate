@@ -447,6 +447,7 @@
                    class="nav-link nav-link-active"><span>QA 文本管理</span></a>
                 <a href="${pageContext.request.contextPath}/template-manage" class="nav-link"><span>管理模板</span></a>
                 <a href="${pageContext.request.contextPath}/batch-create" class="nav-link"><span>批量创建视频</span></a>
+                     <a href="${pageContext.request.contextPath}/biliup-upload" class="nav-link"><span>上传至B站视频</span></a>
                 <a href="${pageContext.request.contextPath}/video-manage" class="nav-link"><span>视频管理</span></a>
                 <a href="${pageContext.request.contextPath}/test" class="nav-link"><span>接口与合成测试</span></a>
             </div>

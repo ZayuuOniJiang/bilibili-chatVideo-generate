@@ -342,6 +342,9 @@
                 <a href="${pageContext.request.contextPath}/batch-create" class="nav-link">
                     <span>批量创建视频</span>
                 </a>
+                <a href="${pageContext.request.contextPath}/biliup-upload" class="nav-link">
+                    <span>上传至B站视频</span>
+                </a>
                 <a href="${pageContext.request.contextPath}/video-manage" class="nav-link">
                     <span>视频管理</span>
                 </a>

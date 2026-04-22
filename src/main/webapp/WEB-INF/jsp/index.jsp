@@ -269,6 +269,9 @@
                 <a href="${pageContext.request.contextPath}/batch-create" class="nav-link">
                     <span>批量创建视频</span>
                 </a>
+                <a href="${pageContext.request.contextPath}/biliup-upload" class="nav-link">
+                    <span>上传至B站视频</span>
+                </a>
                 <a href="${pageContext.request.contextPath}/video-manage" class="nav-link">
                     <span>视频管理</span>
                 </a>
@@ -298,6 +301,7 @@
                     <a href="${pageContext.request.contextPath}/zhihu">打开 QA 文本管理</a>
                     <a href="${pageContext.request.contextPath}/template-manage">打开模板管理</a>
                     <a href="${pageContext.request.contextPath}/batch-create">打开批量创建视频</a>
+                    <a href="${pageContext.request.contextPath}/biliup-upload">打开上传至B站视频</a>
                     <a href="${pageContext.request.contextPath}/video-manage">打开视频管理</a>
                     <a href="${pageContext.request.contextPath}/test">查看 TTS / FFmpeg 测试页</a>
                     <a href="${pageContext.request.contextPath}/api/hello" target="_blank">接口测试 /api/hello</a>
