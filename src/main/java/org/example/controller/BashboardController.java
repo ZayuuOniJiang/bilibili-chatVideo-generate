@@ -179,6 +179,7 @@ public class BashboardController {
                 item.put("index", String.valueOf(idx));
                 item.put("title", title);
                 item.put("fileName", fileName);
+                item.put("absolutePath", p.toAbsolutePath().normalize().toString());
                 try {
                     item.put("sizeBytes", String.valueOf(java.nio.file.Files.size(p)));
                     item.put("modifiedTime", java.nio.file.Files.getLastModifiedTime(p).toString());
