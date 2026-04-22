@@ -18,11 +18,9 @@
             font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
             min-height: 100vh;
             color: var(--text-main);
-            background:
-                linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.18)),
-                url('${pageContext.request.contextPath}/api/background/current') center center / cover no-repeat fixed;
+            background: url('${pageContext.request.contextPath}/api/background/current') center center / cover no-repeat fixed;
         }
-        .app-layout { display:flex; min-height:100vh; background: rgba(255,255,255,0.08); }
+        .app-layout { display:flex; min-height:100vh; background: transparent; }
         .sidebar {
             width:240px; padding:1.5rem 1.1rem;
             background: rgba(236, 244, 255, 0.72);
@@ -113,6 +111,8 @@
                 <a href="${pageContext.request.contextPath}/" class="nav-link"><span>首页</span></a>
                 <a href="${pageContext.request.contextPath}/bashboard" class="nav-link"><span>跑酷生成仪表盘</span></a>
                 <a href="${pageContext.request.contextPath}/zhihu" class="nav-link"><span>QA 文本管理</span></a>
+                <a href="${pageContext.request.contextPath}/template-manage" class="nav-link"><span>管理模板</span></a>
+                <a href="${pageContext.request.contextPath}/batch-create" class="nav-link"><span>批量创建视频</span></a>
                 <a href="${pageContext.request.contextPath}/video-manage" class="nav-link nav-link-active"><span>视频管理</span></a>
                 <a href="${pageContext.request.contextPath}/test" class="nav-link"><span>接口与合成测试</span></a>
             </div>

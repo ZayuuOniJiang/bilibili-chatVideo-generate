@@ -2,6 +2,7 @@ package org.example.service;
 
 import org.example.pojo.Result;
 import org.example.pojo.SubtitleStyleConfig;
+import org.example.pojo.TemplateConfig;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -71,6 +72,15 @@ public interface BashboardService {
             String roleBImageSizePercent,
             String roleBImageFlip
     );
+
+            /**
+             * 批量模式：按模板中的本地文件路径复用单次视频生成链路。
+             */
+            Result<String> confirmTemplateAndGenerateVideoByTemplate(
+                String title,
+                String templateText,
+                TemplateConfig templateConfig
+            );
 }
 
 

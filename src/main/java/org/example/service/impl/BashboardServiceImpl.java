@@ -11,8 +11,10 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import org.example.pojo.Result;
 import org.example.pojo.SubtitleStyleConfig;
+import org.example.pojo.TemplateConfig;
 import org.example.service.BashboardService;
 import org.example.service.QwenTtsService;
+import org.example.util.LocalFileMultipartFile;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
@@ -205,6 +207,96 @@ public class BashboardServiceImpl implements BashboardService {
             log.warn("调用 DashScope Responses API 生成对话模板失败", e);
             return Result.fail(500, "调用千问接口失败：" + e.getMessage());
         }
+    }
+
+    @Override
+    public Result<String> confirmTemplateAndGenerateVideoByTemplate(
+            String title,
+            String templateText,
+            TemplateConfig templateConfig
+    ) {
+        if (templateConfig == null) {
+            return Result.fail(400, "模板配置不能为空");
+        }
+        try {
+            MultipartFile video = toMultipart(templateConfig.getVideoPath(), "video");
+            MultipartFile audioRoleA = toMultipart(templateConfig.getAudioRoleAPath(), "audioRoleA");
+            MultipartFile audioRoleB = toMultipart(templateConfig.getAudioRoleBPath(), "audioRoleB");
+            MultipartFile bgm = toMultipart(templateConfig.getBgmPath(), "bgm");
+
+            MultipartFile[] roleAImages = toMultipartArray(templateConfig.getRoleAImagePaths(), "roleAImages");
+            MultipartFile[] roleBImages = toMultipartArray(templateConfig.getRoleBImagePaths(), "roleBImages");
+
+            SubtitleStyleConfig styleConfig = new SubtitleStyleConfig();
+            styleConfig.setWrapLength(templateConfig.getSubtitleWrapLength());
+            styleConfig.setVerticalOffsetPercent(templateConfig.getSubtitleVerticalOffsetPercent());
+            styleConfig.setFontName(templateConfig.getSubtitleFontName());
+            styleConfig.setFontSize(templateConfig.getSubtitleFontSize());
+            styleConfig.setPrimaryColor(templateConfig.getSubtitlePrimaryColor());
+            styleConfig.setOutlineColor(templateConfig.getSubtitleOutlineColor());
+            styleConfig.setOutline(templateConfig.getSubtitleOutline());
+            styleConfig.setShadow(templateConfig.getSubtitleShadow());
+            styleConfig.setRoleALabel(templateConfig.getRoleALabel());
+            styleConfig.setRoleBLabel(templateConfig.getRoleBLabel());
+
+            String bgmVolume = templateConfig.getBgmVolume() == null
+                    ? null
+                    : String.valueOf(templateConfig.getBgmVolume());
+            String roleAFlip = Boolean.TRUE.equals(templateConfig.getRoleAImageFlip()) ? "true" : "false";
+            String roleBFlip = Boolean.TRUE.equals(templateConfig.getRoleBImageFlip()) ? "true" : "false";
+
+            return confirmTemplateAndGenerateVideo(
+                    title,
+                    templateText,
+                    templateConfig.getMode(),
+                    video,
+                    audioRoleA,
+                    audioRoleB,
+                    bgm,
+                    bgmVolume,
+                    templateConfig.getInstruction(),
+                    styleConfig,
+                    Boolean.TRUE.equals(templateConfig.getExportPortrait()),
+                    roleAImages,
+                    roleBImages,
+                    templateConfig.getRoleAImagePosXPercent(),
+                    templateConfig.getRoleAImagePosYPercent(),
+                    templateConfig.getRoleAImageSizePercent(),
+                    roleAFlip,
+                    templateConfig.getRoleBImagePosXPercent(),
+                    templateConfig.getRoleBImagePosYPercent(),
+                    templateConfig.getRoleBImageSizePercent(),
+                    roleBFlip
+            );
+        } catch (Exception e) {
+            log.warn("模板路径生成视频失败", e);
+            return Result.fail(500, "模板路径生成视频失败：" + e.getMessage());
+        }
+    }
+
+    private MultipartFile toMultipart(String path, String fieldName) throws IOException {
+        if (path == null || path.trim().isEmpty()) {
+            return null;
+        }
+        Path p = Paths.get(path.trim()).toAbsolutePath().normalize();
+        if (!Files.exists(p) || !Files.isRegularFile(p)) {
+            throw new IOException("文件不存在：" + path);
+        }
+        return new LocalFileMultipartFile(p, fieldName);
+    }
+
+    private MultipartFile[] toMultipartArray(List<String> paths, String fieldName) throws IOException {
+        if (paths == null || paths.isEmpty()) {
+            return new MultipartFile[0];
+        }
+        List<MultipartFile> list = new ArrayList<MultipartFile>();
+        for (String path : paths) {
+            if (path == null || path.trim().isEmpty()) {
+                continue;
+            }
+            list.add(toMultipart(path, fieldName));
+        }
+        return list.toArray(new MultipartFile[0]);
     }
 
     @Override
